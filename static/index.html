@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAG Portable</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">RAG local · fase 1</p>
+        <h1>Documentos recuperables, respuestas trazables.</h1>
+        <p class="lead">
+          Base limpia para ingestión, recuperación semántica y síntesis con Ollama
+          sin acoplar el motor al resto de la aplicación.
+        </p>
+      </header>
+
+      <main class="grid">
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Estado</h2>
+            <button id="refresh-health" class="ghost-button" type="button">Actualizar</button>
+          </div>
+          <div id="health-card" class="status-stack"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Ingesta</h2>
+          </div>
+          <p class="panel-copy">
+            Coloca archivos en <code>data/raw/</code> y reconstruye el índice para reflejar el contenido actual.
+          </p>
+          <form id="ingestion-form" class="form-stack">
+            <label class="checkbox-row">
+              <input id="rebuild-index" type="checkbox" checked />
+              <span>Reconstruir el índice antes de ingerir</span>
+            </label>
+            <button class="primary-button" type="submit">Ejecutar ingesta</button>
+          </form>
+          <pre id="ingestion-output" class="console-box">Esperando ejecución.</pre>
+        </section>
+
+        <section class="panel panel-wide">
+          <div class="panel-heading">
+            <h2>Chat RAG</h2>
+          </div>
+          <form id="chat-form" class="form-stack">
+            <label for="question">Pregunta</label>
+            <textarea
+              id="question"
+              name="question"
+              rows="5"
+              placeholder="Ejemplo: ¿Qué políticas aparecen en los documentos sobre tiempos de respuesta?"
+            ></textarea>
+            <button class="primary-button" type="submit">Preguntar</button>
+          </form>
+          <div id="chat-answer" class="answer-card">
+            <p class="empty-state">Todavía no hay respuesta.</p>
+          </div>
+          <div id="sources-list" class="sources-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
+
