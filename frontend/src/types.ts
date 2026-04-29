@@ -73,6 +73,12 @@ export type UploadResponse = {
   rejected_files: string[];
 };
 
+export type DeleteSourceResponse = {
+  source_path: string;
+  file_deleted: boolean;
+  chunks_deleted: boolean;
+};
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant";

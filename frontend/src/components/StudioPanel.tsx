@@ -47,7 +47,7 @@ export default function StudioPanel({
   if (collapsed) {
     return (
       <aside className="panel-surface hidden h-full w-[5.25rem] shrink-0 lg:flex lg:flex-col lg:items-center lg:gap-4 lg:p-4">
-        <PanelHeader title="Studio" collapsed onToggle={onToggle} />
+        <PanelHeader title="Studio" collapsed side="right" onToggle={onToggle} />
         <button className="icon-button h-11 w-11" type="button" onClick={onReindex}>
           <Layers3 className={`h-4 w-4 ${isBusy ? "animate-spin" : ""}`} />
         </button>
@@ -63,6 +63,7 @@ export default function StudioPanel({
       <PanelHeader
         title="Studio"
         subtitle="Herramientas, estado del stack y acciones del flujo RAG."
+        side="right"
         onToggle={onToggle}
         rightSlot={
           <button className="icon-button" type="button" onClick={onRefresh}>
@@ -71,7 +72,7 @@ export default function StudioPanel({
         }
       />
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="mt-5 grid grid-cols-1 gap-3">
         {cards.map((card) => {
           const Icon = cardIcon(card.id);
           const statusClass =

@@ -152,6 +152,34 @@ async def upload_sources(files: list[UploadFile] = File(...)) -> UploadResponse:
     return _serialize_upload_report(report)
 
 
+class DeleteSourceRequest(BaseModel):
+    source_path: str = Field(..., min_length=1, description="Relative source path to delete.")
+
+
+class DeleteSourceResponse(BaseModel):
+    source_path: str
+    file_deleted: bool
+    chunks_deleted: bool
+
+
+@router.post("/sources/delete", response_model=DeleteSourceResponse)
+async def delete_source(request: DeleteSourceRequest) -> DeleteSourceResponse:
+    result = await asyncio.to_thread(
+        get_workspace_service().delete_source,
+        request.source_path,
+    )
+    if not result["file_deleted"] and not result["chunks_deleted"]:
+        raise HTTPException(
+            status_code=404,
+            detail=f"La fuente '{request.source_path}' no existe o ya fue eliminada.",
+        )
+    return DeleteSourceResponse(
+        source_path=request.source_path,
+        file_deleted=result["file_deleted"],
+        chunks_deleted=result["chunks_deleted"],
+    )
+
+
 @router.get("/dashboard", response_model=DashboardResponse)
 async def dashboard() -> DashboardResponse:
     health = _build_health_response()

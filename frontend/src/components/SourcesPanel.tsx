@@ -6,6 +6,7 @@ import {
   FolderUp,
   RefreshCw,
   Search,
+  Trash2,
 } from "lucide-react";
 
 import PanelHeader from "./PanelHeader";
@@ -16,6 +17,7 @@ type SourcesPanelProps = {
   isBusy: boolean;
   onToggle: () => void;
   onUpload: (files: File[]) => void;
+  onDelete: (sourcePath: string) => void;
   onReindex: () => void;
   onRefresh: () => void;
   query: string;
@@ -41,6 +43,7 @@ export default function SourcesPanel({
   isBusy,
   onToggle,
   onUpload,
+  onDelete,
   onReindex,
   onRefresh,
   query,
@@ -50,10 +53,19 @@ export default function SourcesPanel({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const indexedSources = sources.filter((source) => source.is_indexed).length;
 
+  function handleDeleteClick(source: SourceRecord) {
+    const confirmed = window.confirm(
+      `¿Seguro que deseas eliminar "${source.file_name}"?\n\nEsto eliminará el archivo y sus chunks del índice vectorial.`,
+    );
+    if (confirmed) {
+      onDelete(source.source_path);
+    }
+  }
+
   if (collapsed) {
     return (
       <aside className="panel-surface hidden h-full w-[5.25rem] shrink-0 lg:flex lg:flex-col lg:items-center lg:gap-4 lg:p-4">
-        <PanelHeader title="Fuentes" collapsed onToggle={onToggle} />
+        <PanelHeader title="Fuentes" collapsed side="left" onToggle={onToggle} />
         <div className="flex flex-col items-center gap-3 pt-2">
           <div className="status-chip">
             <Database className="h-4 w-4" />
@@ -93,6 +105,7 @@ export default function SourcesPanel({
       <PanelHeader
         title="Fuentes"
         subtitle={`${indexedSources}/${sources.length} activas en el RAG`}
+        side="left"
         onToggle={onToggle}
         rightSlot={
           <button className="icon-button" type="button" onClick={onRefresh}>
@@ -146,7 +159,7 @@ export default function SourcesPanel({
       <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
         {sources.length ? (
           sources.map((source) => (
-            <article className="source-row" key={source.source_path}>
+            <article className="source-row group" key={source.source_path}>
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--surface-strong)]">
                 <FileText className="h-5 w-5 text-[color:var(--accent)]" />
               </div>
@@ -167,6 +180,16 @@ export default function SourcesPanel({
                 ) : (
                   <span className="status-badge status-badge-warning">Pendiente</span>
                 )}
+                <button
+                  className="delete-source-button"
+                  type="button"
+                  title={`Eliminar ${source.file_name}`}
+                  aria-label={`Eliminar ${source.file_name}`}
+                  disabled={isBusy}
+                  onClick={() => handleDeleteClick(source)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
             </article>
           ))

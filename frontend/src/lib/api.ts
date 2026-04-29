@@ -1,6 +1,7 @@
 import type {
   ChatResponse,
   DashboardResponse,
+  DeleteSourceResponse,
   IngestionResponse,
   UploadResponse,
 } from "../types";
@@ -45,5 +46,13 @@ export function uploadSources(files: File[]): Promise<UploadResponse> {
   return requestJson<UploadResponse>("/api/sources/upload", {
     method: "POST",
     body: formData,
+  });
+}
+
+export function deleteSource(sourcePath: string): Promise<DeleteSourceResponse> {
+  return requestJson<DeleteSourceResponse>("/api/sources/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_path: sourcePath }),
   });
 }

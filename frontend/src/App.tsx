@@ -1,11 +1,16 @@
-import { useDeferredValue, useEffect, useState, useTransition } from "react";
+import { useCallback, useDeferredValue, useEffect, useState, useTransition } from "react";
 import { Database, PanelsTopLeft, SlidersHorizontal } from "lucide-react";
 
 import ChatPanel from "./components/ChatPanel";
+import ResizeHandle from "./components/ResizeHandle";
 import SourcesPanel from "./components/SourcesPanel";
 import StudioPanel from "./components/StudioPanel";
-import { fetchDashboard, runIngestion, sendChat, uploadSources } from "./lib/api";
+import { fetchDashboard, deleteSource, runIngestion, sendChat, uploadSources } from "./lib/api";
 import type { ChatMessage, DashboardResponse } from "./types";
+
+const DEFAULT_PANEL_WIDTH = 280;
+const MIN_PANEL_WIDTH = 200;
+const MAX_PANEL_WIDTH = 480;
 
 function nowLabel(): string {
   return new Intl.DateTimeFormat("es-AR", {
@@ -31,6 +36,8 @@ export default function App() {
   const [banner, setBanner] = useState<string | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [leftWidth, setLeftWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const [rightWidth, setRightWidth] = useState(DEFAULT_PANEL_WIDTH);
   const [mobilePanel, setMobilePanel] = useState<"sources" | "studio" | null>(null);
   const [sourceQuery, setSourceQuery] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -106,6 +113,21 @@ export default function App() {
     }
   }
 
+  async function handleDelete(sourcePath: string) {
+    const fileName = sourcePath.split("/").pop() ?? sourcePath;
+    setBanner(`Eliminando "${fileName}"...`);
+    setIsBusy(true);
+    try {
+      await deleteSource(sourcePath);
+      await loadDashboard();
+      setBanner(`Fuente "${fileName}" eliminada correctamente.`);
+    } catch (error) {
+      setBanner(error instanceof Error ? error.message : "No se pudo eliminar la fuente.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function handleSendMessage() {
     const question = composer.trim();
     if (!question || isSending) {
@@ -151,6 +173,9 @@ export default function App() {
     }
   }
 
+  const handleLeftResize = useCallback((w: number) => setLeftWidth(w), []);
+  const handleRightResize = useCallback((w: number) => setRightWidth(w), []);
+
   const summary = dashboard?.summary ?? null;
   const health = dashboard?.health ?? null;
 
@@ -186,7 +211,8 @@ export default function App() {
 
         {banner ? <div className="banner-shell mb-4">{banner}</div> : null}
 
-        <div className="flex flex-1 gap-4 overflow-hidden">
+        <div className="flex flex-1 gap-0 overflow-hidden">
+          {/* Mobile drawers */}
           <div className={`${mobilePanel === "sources" ? "drawer-open" : "drawer-closed"} drawer-shell lg:hidden`}>
             <div className="drawer-backdrop" onClick={() => setMobilePanel(null)} />
             <div className="drawer-panel">
@@ -196,6 +222,7 @@ export default function App() {
                 isBusy={isBusy || isRefreshing}
                 onToggle={() => setMobilePanel(null)}
                 onUpload={handleUpload}
+                onDelete={handleDelete}
                 onReindex={handleReindex}
                 onRefresh={refreshDashboard}
                 query={sourceQuery}
@@ -219,13 +246,18 @@ export default function App() {
             </div>
           </div>
 
-          <div className="hidden lg:flex">
+          {/* Desktop: Left panel */}
+          <div
+            className="hidden shrink-0 lg:flex"
+            style={{ width: leftCollapsed ? undefined : `${leftWidth}px` }}
+          >
             <SourcesPanel
               sources={filteredSources}
               collapsed={leftCollapsed}
               isBusy={isBusy || isRefreshing}
               onToggle={() => setLeftCollapsed((current) => !current)}
               onUpload={handleUpload}
+              onDelete={handleDelete}
               onReindex={handleReindex}
               onRefresh={refreshDashboard}
               query={sourceQuery}
@@ -233,6 +265,20 @@ export default function App() {
             />
           </div>
 
+          {/* Left resize handle */}
+          {!leftCollapsed && (
+            <div className="hidden lg:flex">
+              <ResizeHandle
+                side="left"
+                currentWidth={leftWidth}
+                onResize={handleLeftResize}
+                minWidth={MIN_PANEL_WIDTH}
+                maxWidth={MAX_PANEL_WIDTH}
+              />
+            </div>
+          )}
+
+          {/* Center: Chat panel */}
           <div className="flex min-w-0 flex-1">
             <ChatPanel
               composer={composer}
@@ -245,7 +291,24 @@ export default function App() {
             />
           </div>
 
-          <div className="hidden lg:flex">
+          {/* Right resize handle */}
+          {!rightCollapsed && (
+            <div className="hidden lg:flex">
+              <ResizeHandle
+                side="right"
+                currentWidth={rightWidth}
+                onResize={handleRightResize}
+                minWidth={MIN_PANEL_WIDTH}
+                maxWidth={MAX_PANEL_WIDTH}
+              />
+            </div>
+          )}
+
+          {/* Desktop: Right panel */}
+          <div
+            className="hidden shrink-0 lg:flex"
+            style={{ width: rightCollapsed ? undefined : `${rightWidth}px` }}
+          >
             <StudioPanel
               cards={dashboard?.studio_cards ?? []}
               collapsed={rightCollapsed}

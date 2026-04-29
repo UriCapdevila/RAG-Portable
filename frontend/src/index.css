@@ -156,6 +156,39 @@ body {
   padding: 0.9rem;
 }
 
+.delete-source-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.5;
+  transition:
+    opacity 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.source-row:hover .delete-source-button {
+  opacity: 1;
+}
+
+.delete-source-button:hover {
+  opacity: 1;
+  color: #c0392b;
+  background: rgba(192, 57, 43, 0.1);
+}
+
+.delete-source-button:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
 .empty-panel {
   border-radius: 24px;
   padding: 1.2rem;
@@ -265,4 +298,41 @@ body {
   .drawer-shell {
     display: none;
   }
+}
+
+/* ── Resize Handle ────────────────────────────────────────────── */
+
+.resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  cursor: col-resize;
+  position: relative;
+  flex-shrink: 0;
+  z-index: 10;
+  transition: background 160ms ease;
+}
+
+.resize-handle:hover,
+.resize-handle-active {
+  background: rgba(186, 74, 27, 0.06);
+}
+
+.resize-handle-indicator {
+  width: 3px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(69, 49, 34, 0.14);
+  transition:
+    background 160ms ease,
+    height 160ms ease,
+    width 160ms ease;
+}
+
+.resize-handle:hover .resize-handle-indicator,
+.resize-handle-active .resize-handle-indicator {
+  width: 4px;
+  height: 60px;
+  background: var(--accent);
 }

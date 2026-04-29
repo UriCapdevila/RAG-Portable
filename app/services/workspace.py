@@ -57,6 +57,31 @@ class WorkspaceService:
 
         return report
 
+    def delete_source(self, source_path: str) -> dict[str, bool]:
+        """Delete a source file from disk and remove its chunks from the vector store."""
+        file_deleted = False
+        chunks_deleted = False
+
+        # 1. Remove the physical file
+        file_path = self._settings.project_root / Path(source_path)
+        if file_path.exists() and file_path.is_file():
+            file_path.unlink()
+            file_deleted = True
+
+        # 2. Remove chunks from LanceDB
+        try:
+            db = lancedb.connect(str(self._settings.vector_db_dir))
+            if self._settings.vector_table_name in db.table_names():
+                table = db.open_table(self._settings.vector_table_name)
+                # LanceDB supports SQL-like filter for deletion
+                normalized = source_path.replace("'", "''")
+                table.delete(f"metadata.source_path = '{normalized}'")
+                chunks_deleted = True
+        except Exception:
+            pass
+
+        return {"file_deleted": file_deleted, "chunks_deleted": chunks_deleted}
+
     def _discover_source_files(self) -> list[Path]:
         return sorted(
             path
