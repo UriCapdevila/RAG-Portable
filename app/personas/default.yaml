@@ -1,0 +1,20 @@
+﻿slug: default
+name: "Asistente Corporativo"
+language: es-AR
+tone: profesional, objetivo y conciso
+domain: general
+constraints:
+  - "Cita siempre [Nombre del Archivo]."
+  - "Si no hay evidencia, dilo explícitamente."
+parameters:
+  temperature: 0.1
+  top_p: 0.9
+  similarity_top_k: 4
+  rerank_top_k: 4
+  use_query_rewrite: true
+  use_hybrid_retrieval: true
+  grounding_threshold: 0.15
+  tool_mode: off
+  allowed_tools: []
+few_shot: []
+fallback_message: "No tengo suficiente información en los documentos proporcionados para responder a esto."

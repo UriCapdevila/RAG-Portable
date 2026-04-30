@@ -1,28 +1,53 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Any
 
-import lancedb
-from llama_index.core import VectorStoreIndex
-from llama_index.embeddings.ollama import OllamaEmbedding
-from llama_index.vector_stores.lancedb import LanceDBVectorStore
-
 from app.core.config import AppSettings
-from app.core.prompts import RAG_SYSTEM_PROMPT, QUERY_REWRITE_PROMPT
+from app.core.prompts import build_system_prompt, build_user_prompt
+from app.ports.embeddings import EmbeddingProviderPort
+from app.ports.keyword_index import KeywordIndexPort
+from app.ports.llm import LLMProviderPort
+from app.ports.reranker import RerankerPort
+from app.ports.vector_store import VectorStorePort
+from app.services.fusion import reciprocal_rank_fusion
+from app.services.grounding_validator import is_grounded
 from app.services.models import ChatResult, RetrievedChunk
-from app.services.ollama_client import OllamaChatClient
+from app.services.personas import PersonaService
+from app.services.query_processor import QueryProcessor
+from app.services.tool_dispatcher import ToolDispatcher
+from app.services.tools.registry import ToolRegistry
+from app.services.tracing import TraceService
 
 
 class ChatService:
-    def __init__(self, settings: AppSettings) -> None:
+    def __init__(
+        self,
+        settings: AppSettings,
+        llm: LLMProviderPort,
+        embed: EmbeddingProviderPort,
+        vector_store: VectorStorePort,
+        keyword_index: KeywordIndexPort,
+        reranker: RerankerPort,
+        personas: PersonaService,
+        tools: ToolRegistry,
+        traces: TraceService,
+    ) -> None:
         self._settings = settings
-        self._ollama = OllamaChatClient(
-            base_url=settings.ollama_base_url,
-            model=settings.chat_model,
-        )
+        self._llm = llm
+        self._embed = embed
+        self._vector_store = vector_store
+        self._keyword_index = keyword_index
+        self._reranker = reranker
+        self._personas = personas
+        self._query = QueryProcessor(llm)
+        self._dispatcher = ToolDispatcher(llm, tools, max_steps=settings.max_react_steps)
+        self._traces = traces
 
     async def answer(self, question: str) -> ChatResult:
+        request_id = str(uuid.uuid4())
+        persona = self._personas.get_active()
         cleaned_question = question.strip()
         if not cleaned_question:
             raise ValueError("Question cannot be empty.")
@@ -30,97 +55,91 @@ class ChatService:
         if not self.vector_store_ready():
             raise RuntimeError("The vector store is empty. Run ingestion first.")
 
-        # Pilar 4: Normalización de la Consulta (Query Processing)
-        optimized_query = await self._rewrite_query(cleaned_question)
+        with self._traces.stage(request_id, persona.slug, "query_rewrite"):
+            optimized_query = cleaned_question
+            if persona.parameters.use_query_rewrite:
+                optimized_query = await asyncio.to_thread(self._query.rewrite, cleaned_question)
 
-        # Recuperamos el doble de chunks requeridos para tener margen en el Re-ranking
-        retriever = self._build_index().as_retriever(
-            similarity_top_k=self._settings.similarity_top_k * 2
-        )
-        retrieved_nodes = await asyncio.to_thread(retriever.retrieve, optimized_query)
+        top_k = max(1, persona.parameters.similarity_top_k)
+        with self._traces.stage(request_id, persona.slug, "vector_retrieve"):
+            vector_rows = await asyncio.to_thread(self._vector_store.query, optimized_query, top_k * 2)
+            vector_chunks = [RetrievedChunk(**row) for row in vector_rows]
 
-        chunks = [
-            RetrievedChunk(
-                text=node.node.get_content(),
-                score=node.score,
-                metadata=dict(node.node.metadata or {}),
-            )
-            for node in retrieved_nodes
-        ]
+        chunks = vector_chunks
+        retrieval_strategy = "vector"
+        if persona.parameters.use_hybrid_retrieval:
+            with self._traces.stage(request_id, persona.slug, "keyword_retrieve"):
+                keyword_rows = await asyncio.to_thread(self._keyword_index.query, optimized_query, top_k * 2)
+                keyword_chunks = [RetrievedChunk(**row) for row in keyword_rows]
+            with self._traces.stage(request_id, persona.slug, "fusion"):
+                chunks = reciprocal_rank_fusion([vector_chunks, keyword_chunks])
+                retrieval_strategy = "hybrid"
 
         if not chunks:
             return ChatResult(
-                answer="No encontre contexto suficiente para responder con seguridad.",
-                model=self._ollama.model,
+                answer=persona.fallback_message,
+                model=self._llm.model,
                 sources=[],
                 retrieved_chunks=[],
+                grounded=True,
+                retrieval_strategy=retrieval_strategy,
             )
 
-        # Pilar 5: Post-procesamiento y Re-ranking
-        ranked_chunks = self._rerank_chunks(cleaned_question, chunks)[:self._settings.similarity_top_k]
+        with self._traces.stage(request_id, persona.slug, "rerank"):
+            ranked_chunks = await asyncio.to_thread(
+                self._reranker.rerank,
+                cleaned_question,
+                chunks,
+                max(1, persona.parameters.rerank_top_k),
+            )
 
-        user_prompt = self._build_user_prompt(cleaned_question, ranked_chunks)
-        answer = await asyncio.to_thread(
-            self._ollama.generate,
-            RAG_SYSTEM_PROMPT,
-            user_prompt,
-        )
+        if (ranked_chunks[0].score or 0.0) < persona.parameters.grounding_threshold:
+            return ChatResult(
+                answer=persona.fallback_message,
+                model=self._llm.model,
+                sources=self._collect_sources(ranked_chunks),
+                retrieved_chunks=ranked_chunks,
+                grounded=True,
+                retrieval_strategy=retrieval_strategy,
+            )
+
+        context_blocks = [
+            f"[Fuente {index}] {chunk.metadata.get('source_path', 'desconocido')}\n{chunk.text.strip()}"
+            for index, chunk in enumerate(ranked_chunks, start=1)
+        ]
+        user_prompt = build_user_prompt(cleaned_question, context_blocks)
+        system_prompt = build_system_prompt(persona, [])
+        with self._traces.stage(request_id, persona.slug, "generate"):
+            if persona.parameters.tool_mode == "off":
+                answer = await asyncio.to_thread(
+                    self._llm.generate,
+                    system_prompt,
+                    user_prompt,
+                    temperature=persona.parameters.temperature,
+                )
+            else:
+                answer = await asyncio.to_thread(self._dispatcher.run, system_prompt, user_prompt, {})
+        grounded = is_grounded(answer, [source["file_name"] for source in self._collect_sources(ranked_chunks)])
 
         return ChatResult(
             answer=answer,
-            model=self._ollama.model,
+            model=self._llm.model,
             sources=self._collect_sources(ranked_chunks),
             retrieved_chunks=ranked_chunks,
+            grounded=grounded,
+            retrieval_strategy=retrieval_strategy,
         )
 
     def health_check(self) -> dict[str, Any]:
         return {
-            "ollama_connected": self._ollama.health_check(),
+            "ollama_connected": self._llm.health_check(),
             "vector_store_ready": self.vector_store_ready(),
             "chat_model": self._settings.chat_model,
             "embedding_model": self._settings.embedding_model,
         }
 
     def vector_store_ready(self) -> bool:
-        try:
-            db = lancedb.connect(str(self._settings.vector_db_dir))
-            return self._settings.vector_table_name in db.table_names()
-        except Exception:
-            return False
-
-    def _build_index(self) -> VectorStoreIndex:
-        vector_store = LanceDBVectorStore(
-            uri=str(self._settings.vector_db_dir),
-            table_name=self._settings.vector_table_name,
-        )
-        embed_model = OllamaEmbedding(
-            model_name=self._settings.embedding_model,
-            base_url=self._settings.ollama_base_url,
-        )
-        return VectorStoreIndex.from_vector_store(
-            vector_store=vector_store,
-            embed_model=embed_model,
-        )
-
-    def _build_user_prompt(self, question: str, chunks: list[RetrievedChunk]) -> str:
-        context_blocks = []
-        for index, chunk in enumerate(chunks, start=1):
-            source = chunk.metadata.get("source_path", "desconocido")
-            context_blocks.append(
-                f"[Fuente {index}] {source}\n{chunk.text.strip()}"
-            )
-
-        joined_context = "\n\n".join(context_blocks)
-        return (
-            "Contexto recuperado:\n"
-            f"{joined_context}\n\n"
-            "Pregunta del usuario:\n"
-            f"{question}\n\n"
-            "Instrucciones:\n"
-            "- Responde solo con base en el contexto.\n"
-            "- Si falta evidencia, indicalo.\n"
-            "- Cita las fuentes relevantes al final."
-        )
+        return self._vector_store.is_ready()
 
     def _collect_sources(self, chunks: list[RetrievedChunk]) -> list[dict[str, Any]]:
         seen: set[str] = set()
@@ -141,26 +160,5 @@ class ChatService:
 
         return sources
 
-    async def _rewrite_query(self, original_query: str) -> str:
-        """
-        Utiliza el LLM para reformular la consulta, expandir sinónimos y mejorar la búsqueda vectorial.
-        """
-        try:
-            prompt = QUERY_REWRITE_PROMPT.format(question=original_query)
-            rewritten = await asyncio.to_thread(
-                self._ollama.generate,
-                "Eres un optimizador de búsquedas semánticas.",
-                prompt
-            )
-            # Limpiamos posibles comillas que añada el LLM
-            return rewritten.strip(' "\'\n')
-        except Exception:
-            return original_query
-
-    def _rerank_chunks(self, query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
-        """
-        Hook arquitectónico para implementar modelos de Re-ranking (Cross-Encoders).
-        Por defecto, preserva y asegura el orden por score de similitud (Top-K).
-        """
-        return sorted(chunks, key=lambda x: x.score or 0.0, reverse=True)
+    
 

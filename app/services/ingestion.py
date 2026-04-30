@@ -1,28 +1,28 @@
 from __future__ import annotations
 
-import shutil
+import hashlib
 from pathlib import Path
 from typing import Any
 
-from llama_index.core import SimpleDirectoryReader, StorageContext, VectorStoreIndex
-from llama_index.core.schema import TextNode
-from llama_index.embeddings.ollama import OllamaEmbedding
-from llama_index.vector_stores.lancedb import LanceDBVectorStore
-
+from app.adapters.loaders.registry import LoaderRegistry
 from app.core.config import AppSettings
+from app.core.db import sqlite_conn
+from app.ports.vector_store import VectorStorePort
 from app.services.chunking import RecursiveChunker
 from app.services.models import ChunkPayload, IngestionReport
 
 
 class IngestionService:
-    def __init__(self, settings: AppSettings) -> None:
+    def __init__(self, settings: AppSettings, vector_store: VectorStorePort) -> None:
         self._settings = settings
+        self._vector_store = vector_store
         self._chunker = RecursiveChunker(
             chunk_size=settings.chunk_size,
             chunk_overlap=settings.chunk_overlap,
         )
+        self._loaders = LoaderRegistry()
 
-    def ingest(self, rebuild_index: bool = True) -> IngestionReport:
+    def ingest(self, rebuild_index: bool = False) -> IngestionReport:
         self._settings.ensure_directories()
         source_files = self._discover_source_files()
         if not source_files:
@@ -34,11 +34,14 @@ class IngestionService:
                 embedding_model=self._settings.embedding_model,
             )
 
-        if rebuild_index:
-            self._reset_vector_store()
-
-        documents = self._load_documents(source_files)
-        chunks = self._build_chunks(documents)
+        chunks: list[ChunkPayload] = []
+        changed_files: list[Path] = []
+        for path in source_files:
+            if rebuild_index or self._file_changed(path):
+                changed_files.append(path)
+                chunks.extend(self._build_chunks([self._to_document(path)]))
+                self._vector_store.delete_by_source(path.relative_to(self._settings.project_root).as_posix())
+        self._update_manifest(changed_files, chunks)
 
         if chunks:
             self._index_chunks(chunks)
@@ -63,12 +66,10 @@ class IngestionService:
         ]
         return sorted(files)
 
-    def _load_documents(self, source_files: list[Path]) -> list[Any]:
-        reader = SimpleDirectoryReader(
-            input_files=[str(path) for path in source_files],
-            filename_as_id=True,
-        )
-        return reader.load_data()
+    def _to_document(self, path: Path) -> Any:
+        text = self._loaders.load_text(path)
+        relpath = path.relative_to(self._settings.project_root).as_posix()
+        return type("Doc", (), {"text": text, "metadata": {"file_path": relpath, "file_name": path.name}})()
 
     def _build_chunks(self, documents: list[Any]) -> list[ChunkPayload]:
         chunks: list[ChunkPayload] = []
@@ -95,12 +96,18 @@ class IngestionService:
             }
             base_metadata.update({key: value for key, value in metadata.items() if value is not None})
 
+            seen_hashes: set[str] = set()
             for chunk_index, chunk_text in enumerate(self._chunker.split_text(text)):
+                chunk_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
+                if chunk_hash in seen_hashes:
+                    continue
+                seen_hashes.add(chunk_hash)
                 chunk_id = f"{document_index}-{chunk_index}"
                 chunk_metadata = {
                     **base_metadata,
                     "chunk_index": chunk_index,
                     "chunk_size": len(chunk_text),
+                    "chunk_hash": chunk_hash,
                 }
                 chunks.append(ChunkPayload(chunk_id=chunk_id, text=chunk_text, metadata=chunk_metadata))
 
@@ -116,33 +123,47 @@ class IngestionService:
             return str(source_path).replace("\\", "/")
 
     def _index_chunks(self, chunks: list[ChunkPayload]) -> None:
-        embed_model = OllamaEmbedding(
-            model_name=self._settings.embedding_model,
-            base_url=self._settings.ollama_base_url,
-        )
-        vector_store = LanceDBVectorStore(
-            uri=str(self._settings.vector_db_dir),
-            table_name=self._settings.vector_table_name,
-        )
-        storage_context = StorageContext.from_defaults(vector_store=vector_store)
-        index = VectorStoreIndex(
-            nodes=[],
-            storage_context=storage_context,
-            embed_model=embed_model,
-            show_progress=True,
-        )
-
-        nodes = [
-            TextNode(
-                id_=chunk.chunk_id,
-                text=chunk.text,
-                metadata=chunk.metadata,
-            )
+        payload = [
+            {
+                "chunk_id": chunk.chunk_id,
+                "text": chunk.text,
+                "metadata": chunk.metadata,
+            }
             for chunk in chunks
         ]
-        index.insert_nodes(nodes)
+        self._vector_store.upsert(payload)
 
-    def _reset_vector_store(self) -> None:
-        if self._settings.vector_db_dir.exists():
-            shutil.rmtree(self._settings.vector_db_dir, ignore_errors=True)
-        self._settings.vector_db_dir.mkdir(parents=True, exist_ok=True)
+    def _file_changed(self, path: Path) -> bool:
+        stats = path.stat()
+        sha = hashlib.sha256(path.read_bytes()).hexdigest()
+        rel = path.relative_to(self._settings.project_root).as_posix()
+        with sqlite_conn(self._settings) as conn:
+            row = conn.execute(
+                "SELECT sha256, mtime FROM ingest_manifest WHERE source_path = ?",
+                (rel,),
+            ).fetchone()
+        if not row:
+            return True
+        old_sha, old_mtime = row
+        return old_sha != sha or float(old_mtime) != float(stats.st_mtime)
+
+    def _update_manifest(self, source_files: list[Path], chunks: list[ChunkPayload]) -> None:
+        chunks_per_source: dict[str, int] = {}
+        for chunk in chunks:
+            source = str(chunk.metadata.get("source_path", "unknown"))
+            chunks_per_source[source] = chunks_per_source.get(source, 0) + 1
+        with sqlite_conn(self._settings) as conn:
+            for path in source_files:
+                stats = path.stat()
+                rel = path.relative_to(self._settings.project_root).as_posix()
+                sha = hashlib.sha256(path.read_bytes()).hexdigest()
+                conn.execute(
+                    """
+                    INSERT INTO ingest_manifest(source_path, sha256, size, mtime, chunk_count, last_indexed_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(source_path) DO UPDATE SET
+                      sha256=excluded.sha256, size=excluded.size, mtime=excluded.mtime,
+                      chunk_count=excluded.chunk_count, last_indexed_at=CURRENT_TIMESTAMP
+                    """,
+                    (rel, sha, stats.st_size, stats.st_mtime, chunks_per_source.get(rel, 0)),
+                )

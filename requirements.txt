@@ -6,3 +6,10 @@ llama-index-embeddings-ollama
 llama-index-vector-stores-lancedb
 lancedb
 python-multipart
+pydantic-settings
+structlog
+pyyaml
+sentence-transformers
+pytest
+ruff
+mypy

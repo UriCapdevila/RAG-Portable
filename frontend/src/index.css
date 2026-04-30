@@ -130,6 +130,11 @@ body {
   color: var(--warning);
 }
 
+.status-badge-neutral {
+  background: rgba(69, 49, 34, 0.1);
+  color: var(--muted);
+}
+
 .input-shell {
   display: flex;
   align-items: center;

@@ -2,17 +2,24 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
-from functools import lru_cache
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.core.container import (
+    get_chat_service,
+    get_ingestion_service,
+    get_persona_service,
+    get_trace_service,
+    get_workspace_service,
+)
 from app.services.chat import ChatService
 from app.services.ingestion import IngestionService
 from app.services.models import SourceRecord, UploadReport
-from app.services.ollama_client import OllamaClientError
+from app.services.personas import Persona, PersonaService
+from app.services.tracing import TraceService
 from app.services.workspace import WorkspaceService
 
 router = APIRouter(prefix="/api", tags=["rag"])
@@ -62,6 +69,8 @@ class ChatResponse(BaseModel):
     model: str
     sources: list[SourceResponse]
     retrieved_chunks: list[ChunkResponse]
+    grounded: bool
+    retrieval_strategy: str
 
 
 class SourceRecordResponse(BaseModel):
@@ -104,21 +113,6 @@ class DashboardResponse(BaseModel):
     studio_cards: list[StudioCardResponse]
 
 
-@lru_cache(maxsize=1)
-def get_ingestion_service() -> IngestionService:
-    return IngestionService(settings)
-
-
-@lru_cache(maxsize=1)
-def get_chat_service() -> ChatService:
-    return ChatService(settings)
-
-
-@lru_cache(maxsize=1)
-def get_workspace_service() -> WorkspaceService:
-    return WorkspaceService(settings)
-
-
 def _build_health_response() -> HealthResponse:
     return HealthResponse(**get_chat_service().health_check())
 
@@ -132,23 +126,26 @@ def _serialize_upload_report(report: UploadReport) -> UploadResponse:
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
-    return _build_health_response()
+async def health_check(chat_service: ChatService = Depends(get_chat_service)) -> HealthResponse:
+    return HealthResponse(**chat_service.health_check())
 
 
 @router.get("/sources", response_model=list[SourceRecordResponse])
-async def list_sources() -> list[SourceRecordResponse]:
-    sources = await asyncio.to_thread(get_workspace_service().list_sources)
+async def list_sources(workspace_service: WorkspaceService = Depends(get_workspace_service)) -> list[SourceRecordResponse]:
+    sources = await asyncio.to_thread(workspace_service.list_sources)
     return [_serialize_source(source) for source in sources]
 
 
 @router.post("/sources/upload", response_model=UploadResponse)
-async def upload_sources(files: list[UploadFile] = File(...)) -> UploadResponse:
+async def upload_sources(
+    files: list[UploadFile] = File(...),
+    workspace_service: WorkspaceService = Depends(get_workspace_service),
+) -> UploadResponse:
     payload: list[tuple[str, bytes]] = []
     for file in files:
         payload.append((file.filename or "source", await file.read()))
 
-    report = await asyncio.to_thread(get_workspace_service().save_uploaded_files, payload)
+    report = await asyncio.to_thread(workspace_service.save_uploaded_files, payload)
     return _serialize_upload_report(report)
 
 
@@ -164,10 +161,8 @@ class DeleteSourceResponse(BaseModel):
 
 @router.post("/sources/delete", response_model=DeleteSourceResponse)
 async def delete_source(request: DeleteSourceRequest) -> DeleteSourceResponse:
-    result = await asyncio.to_thread(
-        get_workspace_service().delete_source,
-        request.source_path,
-    )
+    workspace_service = get_workspace_service()
+    result = await asyncio.to_thread(workspace_service.delete_source, request.source_path)
     if not result["file_deleted"] and not result["chunks_deleted"]:
         raise HTTPException(
             status_code=404,
@@ -181,9 +176,12 @@ async def delete_source(request: DeleteSourceRequest) -> DeleteSourceResponse:
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
-async def dashboard() -> DashboardResponse:
-    health = _build_health_response()
-    sources = await asyncio.to_thread(get_workspace_service().list_sources)
+async def dashboard(
+    chat_service: ChatService = Depends(get_chat_service),
+    workspace_service: WorkspaceService = Depends(get_workspace_service),
+) -> DashboardResponse:
+    health = HealthResponse(**chat_service.health_check())
+    sources = await asyncio.to_thread(workspace_service.list_sources)
 
     summary = DashboardSummaryResponse(
         total_sources=len(sources),
@@ -250,12 +248,8 @@ async def dashboard() -> DashboardResponse:
 @router.post("/ingestion/run", response_model=IngestionResponse)
 async def run_ingestion(request: IngestionRequest) -> IngestionResponse:
     try:
-        report = await asyncio.to_thread(
-            get_ingestion_service().ingest,
-            request.rebuild_index,
-        )
-    except OllamaClientError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        ingestion_service = get_ingestion_service()
+        report = await asyncio.to_thread(ingestion_service.ingest, request.rebuild_index)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -263,13 +257,11 @@ async def run_ingestion(request: IngestionRequest) -> IngestionResponse:
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)) -> ChatResponse:
     try:
-        result = await get_chat_service().answer(request.question)
+        result = await chat_service.answer(request.question)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except OllamaClientError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
@@ -279,6 +271,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
         answer=result.answer,
         model=result.model,
         sources=[SourceResponse(**source) for source in result.sources],
+        grounded=result.grounded,
+        retrieval_strategy=result.retrieval_strategy,
         retrieved_chunks=[
             ChunkResponse(
                 text=chunk.text,
@@ -288,3 +282,44 @@ async def chat(request: ChatRequest) -> ChatResponse:
             for chunk in result.retrieved_chunks
         ],
     )
+
+
+class PersonaListResponse(BaseModel):
+    personas: list[Persona]
+
+
+class SetActivePersonaRequest(BaseModel):
+    slug: str
+
+
+@router.get("/personas")
+async def list_personas(persona_service: PersonaService = Depends(get_persona_service)) -> PersonaListResponse:
+    return PersonaListResponse(personas=persona_service.list_personas())
+
+
+@router.get("/personas/active", response_model=Persona)
+async def active_persona(persona_service: PersonaService = Depends(get_persona_service)) -> Persona:
+    return persona_service.get_active()
+
+
+@router.post("/personas/active", response_model=Persona)
+async def set_active_persona(
+    request: SetActivePersonaRequest,
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> Persona:
+    return persona_service.set_active(request.slug)
+
+
+@router.post("/personas", response_model=Persona)
+async def upsert_persona(payload: dict[str, Any], persona_service: PersonaService = Depends(get_persona_service)) -> Persona:
+    return persona_service.upsert(payload)
+
+
+@router.get("/traces")
+async def traces(limit: int = 50, trace_service: TraceService = Depends(get_trace_service)) -> list[dict[str, Any]]:
+    return trace_service.latest(limit=limit)
+
+
+@router.get("/metrics")
+async def metrics(trace_service: TraceService = Depends(get_trace_service)) -> dict[str, Any]:
+    return trace_service.metrics()

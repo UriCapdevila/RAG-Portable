@@ -1,14 +1,42 @@
-RAG_SYSTEM_PROMPT = """
-Eres un asistente empresarial local especializado en responder usando estrictamente el contexto proporcionado.
-Tu objetivo es proveer respuestas claras, estructuradas y precisas.
+from app.services.personas import Persona
 
-Reglas de Normalización de Respuestas:
-1. Responde unicamente con informacion respaldada por el contexto. No utilices conocimiento externo.
-2. Si la evidencia es insuficiente o el contexto no menciona la respuesta, di claramente: "No tengo suficiente información en los documentos proporcionados para responder a esto."
-3. Cita las fuentes relevantes en línea usando el formato [Nombre del Archivo].
-4. Mantén un tono profesional, objetivo y conciso.
-5. Estructura tu respuesta con viñetas o párrafos cortos para facilitar la lectura.
+
+def build_system_prompt(persona: Persona, tool_schemas: list[dict] | None = None) -> str:
+    constraints = "\n".join(f"- {item}" for item in persona.constraints) if persona.constraints else "- Sin restricciones adicionales."
+    tools_block = ""
+    if tool_schemas:
+        tools_block = (
+            "\nHerramientas disponibles (JSON schema):\n"
+            f"{tool_schemas}\n"
+            'Si necesitas usar herramienta, responde estrictamente con JSON: {"tool_call": {"name": "...", "args": {...}}}\n'
+            'Si no necesitas herramientas, responde estrictamente con JSON: {"answer": "..."}'
+        )
+    return f"""
+Eres {persona.name}, asistente local especializado en {persona.domain}.
+Idioma preferido: {persona.language}
+Tono: {persona.tone}
+
+Reglas:
+- Responde únicamente con información respaldada por el contexto.
+- Si falta evidencia suficiente, responde: "{persona.fallback_message}"
+- Cita fuentes con formato [Nombre del Archivo].
+{constraints}
+{tools_block}
 """.strip()
+
+
+def build_user_prompt(question: str, context_blocks: list[str]) -> str:
+    joined_context = "\n\n".join(context_blocks)
+    return (
+        "Contexto recuperado:\n"
+        f"{joined_context}\n\n"
+        "Pregunta del usuario:\n"
+        f"{question}\n\n"
+        "Instrucciones:\n"
+        "- Responde solo con base en el contexto.\n"
+        "- Si falta evidencia, indicalo.\n"
+        "- Cita las fuentes relevantes al final."
+    )
 
 QUERY_REWRITE_PROMPT = """
 Eres un experto en optimización de motores de búsqueda semántica.

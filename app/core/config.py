@@ -1,87 +1,71 @@
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass
 from pathlib import Path
 
-
-def _load_dotenv(dotenv_path: Path) -> None:
-    if not dotenv_path.exists():
-        return
-
-    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def _read_env(name: str, default: str) -> str:
-    value = os.getenv(name)
-    return value.strip() if value else default
+class AppSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
+    project_root: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[2])
+    ollama_base_url: str = Field(default="http://localhost:11434", validation_alias="OLLAMA_BASE_URL")
+    chat_model: str = Field(default="gemma3:latest", validation_alias="OLLAMA_CHAT_MODEL")
+    embedding_model: str = Field(default="nomic-embed-text:latest", validation_alias="OLLAMA_EMBEDDING_MODEL")
+    host: str = Field(default="127.0.0.1", validation_alias="APP_HOST")
+    port: int = Field(default=8000, validation_alias="APP_PORT")
+    frontend_dev_url: str = Field(default="http://127.0.0.1:5173", validation_alias="FRONTEND_DEV_URL")
+    chunk_size: int = Field(default=1200, validation_alias="RAG_CHUNK_SIZE")
+    chunk_overlap: int = Field(default=180, validation_alias="RAG_CHUNK_OVERLAP")
+    similarity_top_k: int = Field(default=4, validation_alias="RAG_TOP_K")
+    vector_table_name: str = Field(default="document_chunks", validation_alias="RAG_VECTOR_TABLE")
+    reranker_model: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2", validation_alias="RAG_RERANKER_MODEL")
+    reranker_enabled: bool = Field(default=False, validation_alias="RAG_RERANKER_ENABLED")
+    grounding_threshold: float = Field(default=0.15, validation_alias="RAG_GROUNDING_THRESHOLD")
+    max_react_steps: int = Field(default=3, validation_alias="RAG_MAX_REACT_STEPS")
+    trace_retention: int = 2000
+    supported_extensions: tuple[str, ...] = (".pdf", ".txt", ".md", ".csv", ".docx", ".html", ".epub")
 
-def _read_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise ValueError(f"Environment variable {name} must be an integer.") from exc
+    @property
+    def data_dir(self) -> Path:
+        return self.project_root / "data"
 
+    @property
+    def raw_data_dir(self) -> Path:
+        return self.data_dir / "raw"
 
-@dataclass(slots=True)
-class AppSettings:
-    project_root: Path
-    data_dir: Path
-    raw_data_dir: Path
-    vector_db_dir: Path
-    sql_db_dir: Path
-    static_dir: Path
-    frontend_dir: Path
-    frontend_dist_dir: Path
-    ollama_base_url: str
-    chat_model: str
-    embedding_model: str
-    host: str
-    port: int
-    frontend_dev_url: str
-    chunk_size: int
-    chunk_overlap: int
-    similarity_top_k: int
-    vector_table_name: str
-    supported_extensions: tuple[str, ...]
+    @property
+    def vector_db_dir(self) -> Path:
+        return self.data_dir / "vector_db"
 
-    @classmethod
-    def from_env(cls) -> "AppSettings":
-        project_root = Path(__file__).resolve().parents[2]
-        _load_dotenv(project_root / ".env")
-        data_dir = project_root / "data"
+    @property
+    def sql_db_dir(self) -> Path:
+        return self.data_dir / "sql_db"
 
-        return cls(
-            project_root=project_root,
-            data_dir=data_dir,
-            raw_data_dir=data_dir / "raw",
-            vector_db_dir=data_dir / "vector_db",
-            sql_db_dir=data_dir / "sql_db",
-            static_dir=project_root / "static",
-            frontend_dir=project_root / "frontend",
-            frontend_dist_dir=project_root / "frontend" / "dist",
-            ollama_base_url=_read_env("OLLAMA_BASE_URL", "http://localhost:11434"),
-            chat_model=_read_env("OLLAMA_CHAT_MODEL", "gemma3:latest"),
-            embedding_model=_read_env("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text:latest"),
-            host=_read_env("APP_HOST", "127.0.0.1"),
-            port=_read_int("APP_PORT", 8000),
-            frontend_dev_url=_read_env("FRONTEND_DEV_URL", "http://127.0.0.1:5173"),
-            chunk_size=_read_int("RAG_CHUNK_SIZE", 1200),
-            chunk_overlap=_read_int("RAG_CHUNK_OVERLAP", 180),
-            similarity_top_k=_read_int("RAG_TOP_K", 4),
-            vector_table_name=_read_env("RAG_VECTOR_TABLE", "document_chunks"),
-            supported_extensions=(".pdf", ".txt", ".md", ".csv"),
-        )
+    @property
+    def static_dir(self) -> Path:
+        return self.project_root / "static"
+
+    @property
+    def frontend_dir(self) -> Path:
+        return self.project_root / "frontend"
+
+    @property
+    def frontend_dist_dir(self) -> Path:
+        return self.frontend_dir / "dist"
+
+    @property
+    def personas_dir(self) -> Path:
+        return self.project_root / "app" / "personas"
+
+    @property
+    def sqlite_db_path(self) -> Path:
+        return self.sql_db_dir / "app.db"
 
     def ensure_directories(self) -> None:
         self.raw_data_dir.mkdir(parents=True, exist_ok=True)
@@ -89,7 +73,8 @@ class AppSettings:
         self.sql_db_dir.mkdir(parents=True, exist_ok=True)
         self.static_dir.mkdir(parents=True, exist_ok=True)
         self.frontend_dir.mkdir(parents=True, exist_ok=True)
+        self.personas_dir.mkdir(parents=True, exist_ok=True)
 
 
-settings = AppSettings.from_env()
+settings = AppSettings()
 settings.ensure_directories()

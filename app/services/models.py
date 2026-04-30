@@ -34,6 +34,8 @@ class ChatResult:
     model: str
     sources: list[dict[str, Any]]
     retrieved_chunks: list[RetrievedChunk]
+    grounded: bool = True
+    retrieval_strategy: str = "vector"
 
 
 @dataclass(slots=True)

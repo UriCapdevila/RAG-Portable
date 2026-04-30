@@ -57,6 +57,14 @@ export default function App() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!banner) {
+      return;
+    }
+    const timeout = window.setTimeout(() => setBanner(null), 4200);
+    return () => window.clearTimeout(timeout);
+  }, [banner]);
+
   const filteredSources = (dashboard?.sources ?? []).filter((source) => {
     const query = deferredSourceQuery.trim().toLowerCase();
     if (!query) {
@@ -83,7 +91,7 @@ export default function App() {
       const report = await runIngestion(true);
       await loadDashboard();
       setBanner(
-        `Indice actualizado: ${report.files_processed} archivo(s) y ${report.chunks_created} chunk(s).`,
+        `Índice actualizado: ${report.files_processed} archivo(s) y ${report.chunks_created} chunk(s).`,
       );
     } catch (error) {
       setBanner(error instanceof Error ? error.message : "No se pudo reindexar.");
@@ -152,6 +160,8 @@ export default function App() {
         role: "assistant",
         content: response.answer,
         sources: response.sources,
+        grounded: response.grounded,
+        retrievalStrategy: response.retrieval_strategy,
         timestampLabel: nowLabel(),
       };
       setMessages((current) => [...current, assistantMessage]);

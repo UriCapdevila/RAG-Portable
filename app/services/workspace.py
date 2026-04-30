@@ -3,15 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-import lancedb
-
 from app.core.config import AppSettings
+from app.ports.vector_store import VectorStorePort
 from app.services.models import SourceRecord, UploadReport
 
 
 class WorkspaceService:
-    def __init__(self, settings: AppSettings) -> None:
+    def __init__(self, settings: AppSettings, vector_store: VectorStorePort) -> None:
         self._settings = settings
+        self._vector_store = vector_store
 
     def list_sources(self) -> list[SourceRecord]:
         indexed_chunks = self._load_indexed_chunk_counts()
@@ -68,15 +68,9 @@ class WorkspaceService:
             file_path.unlink()
             file_deleted = True
 
-        # 2. Remove chunks from LanceDB
+        # 2. Remove chunks from vector store
         try:
-            db = lancedb.connect(str(self._settings.vector_db_dir))
-            if self._settings.vector_table_name in db.table_names():
-                table = db.open_table(self._settings.vector_table_name)
-                # LanceDB supports SQL-like filter for deletion
-                normalized = source_path.replace("'", "''")
-                table.delete(f"metadata.source_path = '{normalized}'")
-                chunks_deleted = True
+            chunks_deleted = self._vector_store.delete_by_source(source_path)
         except Exception:
             pass
 
@@ -91,24 +85,11 @@ class WorkspaceService:
 
     def _load_indexed_chunk_counts(self) -> dict[str, int]:
         try:
-            db = lancedb.connect(str(self._settings.vector_db_dir))
-            if self._settings.vector_table_name not in db.table_names():
-                return {}
-
-            table = db.open_table(self._settings.vector_table_name)
-            rows = table.to_arrow().to_pylist()
+            if hasattr(self._vector_store, "source_chunk_counts"):
+                return getattr(self._vector_store, "source_chunk_counts")()
+            return {}
         except Exception:
             return {}
-
-        counts: dict[str, int] = {}
-        for row in rows:
-            metadata = row.get("metadata")
-            metadata_source = metadata.get("source_path") if isinstance(metadata, dict) else None
-            raw_source = metadata_source or row.get("source_path") or row.get("file_name") or "unknown"
-            source_path = self._normalize_relpath(Path(str(raw_source)))
-            counts[source_path] = counts.get(source_path, 0) + 1
-
-        return counts
 
     def _normalize_relpath(self, path: Path) -> str:
         try:

@@ -27,7 +27,7 @@ type SourcesPanelProps = {
 
 function formatFileSize(fileSize: number | null): string {
   if (!fileSize) {
-    return "Sin tamano";
+    return "Sin tamaño";
   }
   if (fileSize < 1024) {
     return `${fileSize} B`;
@@ -87,7 +87,7 @@ export default function SourcesPanel({
           className="hidden"
           type="file"
           multiple
-          accept=".pdf,.txt,.md,.csv"
+          accept=".pdf,.txt,.md,.csv,.docx,.html,.epub"
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             if (files.length) {
@@ -127,7 +127,7 @@ export default function SourcesPanel({
           className="hidden"
           type="file"
           multiple
-          accept=".pdf,.txt,.md,.csv"
+          accept=".pdf,.txt,.md,.csv,.docx,.html,.epub"
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             if (files.length) {
@@ -189,7 +189,7 @@ export default function SourcesPanel({
         ) : (
           <div className="empty-panel">
             <p className="text-base font-semibold text-[color:var(--text)]">
-              Todavia no hay fuentes cargadas
+              Todavía no hay fuentes cargadas
             </p>
             <p className="mt-2 text-sm text-[color:var(--muted)]">
               Sube archivos o colocalos en <code>data/raw</code> para que el RAG pueda usarlos.

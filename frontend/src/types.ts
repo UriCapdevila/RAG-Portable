@@ -57,6 +57,8 @@ export type ChatResponse = {
   model: string;
   sources: SourceResponse[];
   retrieved_chunks: ChunkResponse[];
+  grounded: boolean;
+  retrieval_strategy: string;
 };
 
 export type IngestionResponse = {
@@ -84,5 +86,7 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   sources?: SourceResponse[];
+  grounded?: boolean;
+  retrievalStrategy?: string;
   timestampLabel: string;
 };
