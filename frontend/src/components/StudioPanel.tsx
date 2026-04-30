@@ -59,10 +59,9 @@ export default function StudioPanel({
   }
 
   return (
-    <aside className="panel-surface flex h-full flex-col overflow-hidden p-5">
+    <aside className="panel-surface flex h-full w-full flex-col overflow-hidden p-5">
       <PanelHeader
         title="Studio"
-        subtitle="Herramientas, estado del stack y acciones del flujo RAG."
         side="right"
         onToggle={onToggle}
         rightSlot={
@@ -72,7 +71,8 @@ export default function StudioPanel({
         }
       />
 
-      <div className="mt-5 grid grid-cols-1 gap-3">
+      <div className="mt-5 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto pr-2 pb-2">
+       <div className="grid grid-cols-[repeat(auto-fill,minmax(125px,1fr))] gap-2">
         {cards.map((card) => {
           const Icon = cardIcon(card.id);
           const statusClass =
@@ -86,51 +86,29 @@ export default function StudioPanel({
 
           return (
             <button
-              className={`studio-card ${statusClass}`}
+              className={`studio-card ${statusClass} flex flex-col items-start justify-between gap-2 !p-3`}
               key={card.id}
               onClick={card.action === "reindex" ? onReindex : undefined}
               type="button"
             >
-              <div className="flex items-center justify-between gap-3">
-                <span className="studio-icon">
-                  <Icon className="h-4 w-4" />
+              <div className="flex w-full items-center justify-between gap-1">
+                <span className="studio-icon !h-7 !w-7 !rounded-lg shrink-0">
+                  <Icon className="h-3.5 w-3.5" />
                 </span>
-                <span className="text-xs uppercase tracking-[0.16em] text-[color:var(--muted)]">
+                <span className="text-[10px] uppercase tracking-[0.1em] text-[color:var(--muted)] truncate">
                   {card.value}
                 </span>
               </div>
-              <div className="mt-4 text-left">
-                <p className="font-semibold text-[color:var(--text)]">{card.title}</p>
-                <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                  {card.description}
-                </p>
+              <div className="w-full text-left mt-1">
+                <p className="text-[13px] font-semibold leading-tight text-[color:var(--text)]">{card.title}</p>
               </div>
             </button>
           );
         })}
-      </div>
-
-      <div className="mt-5 rounded-[24px] border border-[color:var(--stroke)] bg-[color:var(--surface-strong)] p-4">
-        <p className="text-[0.72rem] uppercase tracking-[0.2em] text-[color:var(--accent)]">
-          Estado rapido
-        </p>
-        <div className="mt-4 space-y-3">
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-[color:var(--muted)]">Fuentes indexadas</span>
-            <strong className="text-[color:var(--text)]">{summary?.indexed_sources ?? 0}</strong>
-          </div>
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-[color:var(--muted)]">Chunks persistidos</span>
-            <strong className="text-[color:var(--text)]">{summary?.total_chunks ?? 0}</strong>
-          </div>
-          <div className="flex items-start justify-between gap-3 text-sm">
-            <span className="text-[color:var(--muted)]">Vector store</span>
-            <strong className="max-w-[11rem] text-right text-[color:var(--text)]">
-              {summary?.vector_db_path ?? "N/D"}
-            </strong>
-          </div>
         </div>
-      </div>
+       </div>
+
+
     </aside>
   );
 }

@@ -140,12 +140,24 @@ body {
   padding: 0.9rem 1rem;
 }
 
-.source-row,
 .message-card,
-.studio-card,
 .empty-panel {
   border: 1px solid var(--stroke);
   background: rgba(255, 252, 247, 0.94);
+}
+
+.source-row,
+.studio-card {
+  border: 1px solid transparent;
+  background: transparent;
+  transition: all 200ms ease;
+}
+
+.source-row:hover,
+.studio-card:hover {
+  border-color: var(--stroke);
+  background: rgba(255, 252, 247, 0.94);
+  box-shadow: 0 8px 24px rgba(74, 47, 28, 0.06);
 }
 
 .source-row {
@@ -154,6 +166,8 @@ body {
   gap: 0.9rem;
   border-radius: 22px;
   padding: 0.9rem;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .delete-source-button {
@@ -221,19 +235,26 @@ body {
   text-align: left;
 }
 
-.studio-card-neutral {
+.studio-card-neutral,
+.studio-card-ready,
+.studio-card-warning,
+.studio-card-action {
+  background: transparent;
+}
+
+.studio-card-neutral:hover {
   background: rgba(255, 252, 247, 0.94);
 }
 
-.studio-card-ready {
+.studio-card-ready:hover {
   background: linear-gradient(180deg, rgba(239, 248, 243, 0.94), rgba(248, 252, 249, 0.94));
 }
 
-.studio-card-warning {
+.studio-card-warning:hover {
   background: linear-gradient(180deg, rgba(255, 246, 231, 0.94), rgba(255, 251, 243, 0.94));
 }
 
-.studio-card-action {
+.studio-card-action:hover {
   background: linear-gradient(135deg, rgba(186, 74, 27, 0.14), rgba(255, 240, 227, 0.94));
 }
 
@@ -335,4 +356,21 @@ body {
   width: 4px;
   height: 60px;
   background: var(--accent);
+}
+
+/* ── Scrollbar ────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(69, 49, 34, 0.15);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(69, 49, 34, 0.25);
 }

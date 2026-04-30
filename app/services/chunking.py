@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.services.preprocessing import InputNormalizer
 
 @dataclass(slots=True)
 class RecursiveChunker:
@@ -10,7 +11,8 @@ class RecursiveChunker:
     separators: tuple[str, ...] = ("\n# ", "\n## ", "\n### ", "\n\n", "\n", ". ", " ", "")
 
     def split_text(self, text: str) -> list[str]:
-        normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+        # Pilar 1: Preprocesamiento y Limpieza (Input Normalization)
+        normalized = InputNormalizer.clean_text(text)
         if not normalized:
             return []
 

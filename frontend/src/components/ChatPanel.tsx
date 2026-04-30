@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { ArrowUp, Bot, LoaderCircle, MessageSquareQuote, SendHorizonal } from "lucide-react";
 
 import type { ChatMessage, DashboardSummary, HealthResponse } from "../types";
@@ -28,19 +29,28 @@ export default function ChatPanel({
   onSend,
   summary,
 }: ChatPanelProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onComposerChange(event.target.value);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  };
+
+  useEffect(() => {
+    if (textareaRef.current && composer === "") {
+      textareaRef.current.style.height = "auto";
+    }
+  }, [composer]);
+
   return (
-    <main className="panel-surface flex min-h-[70vh] flex-col overflow-hidden p-5 lg:min-h-0">
-      <div className="flex items-start justify-between gap-4 border-b border-[color:var(--stroke)] pb-4">
-        <div>
-          <p className="text-[0.72rem] uppercase tracking-[0.24em] text-[color:var(--accent)]">
+    <main className="panel-surface flex h-full w-full flex-col overflow-hidden p-5">
+      <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[color:var(--stroke)] pb-4">
+        <div className="flex items-center gap-2">
+          <p className="text-[0.75rem] uppercase tracking-[0.2em] text-[color:var(--accent)]">
             Chat
-          </p>
-          <h1 className="mt-2 font-heading text-3xl text-[color:var(--text)]">
-            Conversacion guiada por contexto
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-[color:var(--muted)]">
-            El motor responde usando el conocimiento indexado y deja trazabilidad en cada
-            mensaje.
           </p>
         </div>
         <div className="hidden items-center gap-2 lg:flex">
@@ -55,7 +65,7 @@ export default function ChatPanel({
         </div>
       </div>
 
-      <div className="mt-5 flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
+      <div className="mt-5 flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto pr-2 pb-2">
         {messages.map((message) => (
           <article
             key={message.id}
@@ -95,31 +105,22 @@ export default function ChatPanel({
       </div>
 
       <form
-        className="mt-5 rounded-[28px] border border-[color:var(--stroke)] bg-[color:var(--surface-strong)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]"
+        className="mt-5 shrink-0 rounded-[28px] border border-[color:var(--stroke)] bg-[color:var(--surface-strong)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]"
         onSubmit={(event) => {
           event.preventDefault();
           onSend();
         }}
       >
         <textarea
-          className="min-h-[124px] w-full resize-none bg-transparent text-[15px] leading-7 text-[color:var(--text)] outline-none placeholder:text-[color:var(--muted)]"
-          placeholder="Pregunta sobre politicas, procesos, hallazgos o cualquier dato disponible en tus fuentes..."
+          ref={textareaRef}
+          className="min-h-[44px] max-h-[240px] w-full resize-none bg-transparent text-[15px] leading-6 text-[color:var(--text)] outline-none placeholder:text-[color:var(--muted)]"
+          placeholder="Comienza a escribir..."
           value={composer}
-          onChange={(event) => onComposerChange(event.target.value)}
+          onChange={handleInput}
+          rows={1}
         />
-        <div className="mt-4 flex flex-col gap-3 border-t border-[color:var(--stroke)] pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap gap-2 text-sm text-[color:var(--muted)]">
-            <span className="status-chip">
-              <ArrowUp className="h-4 w-4" />
-              {summary?.total_chunks ?? 0} chunks persistidos
-            </span>
-            <span className="status-chip">
-              <Bot className="h-4 w-4" />
-              {health?.vector_store_ready ? "RAG listo" : "RAG pendiente"}
-            </span>
-          </div>
-
-          <button className="accent-button" disabled={isSending} type="submit">
+        <div className="mt-3 flex justify-end">
+          <button className="accent-button !px-5 !py-2 !text-sm" disabled={isSending} type="submit">
             {isSending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SendHorizonal className="h-4 w-4" />}
             Enviar
           </button>

@@ -80,11 +80,18 @@ class IngestionService:
 
             metadata = dict(getattr(document, "metadata", {}) or {})
             source_path = self._normalize_source_path(metadata)
+            
+            # Pilar 3: Enriquecimiento con Metadatos (Metadata Normalization)
+            word_count = len(text.split())
             base_metadata = {
                 "source_path": source_path,
                 "file_name": Path(source_path).name,
                 "file_type": Path(source_path).suffix.lower(),
                 "document_id": metadata.get("file_name") or source_path,
+                "word_count": word_count,
+                # Hooks para metadatos avanzados (ej. LlamaIndex SummaryExtractor)
+                "author": metadata.get("author", "Desconocido"),
+                "creation_date": metadata.get("creation_date", "Desconocida"),
             }
             base_metadata.update({key: value for key, value in metadata.items() if value is not None})
 

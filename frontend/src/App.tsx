@@ -180,38 +180,33 @@ export default function App() {
   const health = dashboard?.health ?? null;
 
   return (
-    <div className="min-h-screen bg-[color:var(--bg)] text-[color:var(--text)]">
+    <div className="h-screen overflow-hidden flex flex-col bg-[color:var(--bg)] text-[color:var(--text)]">
       <div className="absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top_left,rgba(186,74,27,0.18),transparent_36%),radial-gradient(circle_at_top_right,rgba(62,96,79,0.14),transparent_30%)]" />
-      <div className="relative mx-auto flex min-h-screen w-full max-w-[1600px] flex-col px-4 py-4 lg:px-6 lg:py-6">
-        <header className="panel-surface mb-4 flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[0.74rem] uppercase tracking-[0.24em] text-[color:var(--accent)]">
-              RAG Portable Studio
-            </p>
-            <h1 className="mt-2 font-heading text-3xl text-[color:var(--text)]">
-              Fuentes a la izquierda, razonamiento al centro, herramientas a la derecha.
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm text-[color:var(--muted)]">
-              La nueva base visual ya esta preparada para crecer hacia un frontend serio en
-              React, con panels colapsables, lectura de estado real y soporte responsivo.
-            </p>
+      <div className="relative mx-auto flex h-full w-full max-w-[1600px] flex-col px-4 py-4 lg:px-6 lg:py-6">
+        {/* Mobile Navbar */}
+        <div className="mb-4 flex shrink-0 items-center justify-between lg:hidden">
+          <div className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-[color:var(--accent)]" />
+            <span className="font-heading text-xl text-[color:var(--text)]">RAG Portable</span>
           </div>
-
-          <div className="flex flex-wrap gap-2 lg:hidden">
-            <button className="ghost-button" type="button" onClick={() => setMobilePanel("sources")}>
+          <div className="flex gap-2">
+            <button className="icon-button h-10 w-10" type="button" onClick={() => setMobilePanel("sources")}>
               <PanelsTopLeft className="h-4 w-4" />
-              Fuentes
             </button>
-            <button className="ghost-button" type="button" onClick={() => setMobilePanel("studio")}>
+            <button className="icon-button h-10 w-10" type="button" onClick={() => setMobilePanel("studio")}>
               <SlidersHorizontal className="h-4 w-4" />
-              Tools
             </button>
           </div>
-        </header>
+        </div>
 
-        {banner ? <div className="banner-shell mb-4">{banner}</div> : null}
+        {/* Floating Toast Banner */}
+        {banner ? (
+          <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 shadow-xl banner-shell px-6 py-3 animate-in fade-in slide-in-from-top-4">
+            {banner}
+          </div>
+        ) : null}
 
-        <div className="flex flex-1 gap-0 overflow-hidden">
+        <div className="flex flex-1 min-h-0 gap-0 overflow-hidden">
           {/* Mobile drawers */}
           <div className={`${mobilePanel === "sources" ? "drawer-open" : "drawer-closed"} drawer-shell lg:hidden`}>
             <div className="drawer-backdrop" onClick={() => setMobilePanel(null)} />
@@ -248,7 +243,7 @@ export default function App() {
 
           {/* Desktop: Left panel */}
           <div
-            className="hidden shrink-0 lg:flex"
+            className="hidden shrink-0 lg:flex lg:h-full"
             style={{ width: leftCollapsed ? undefined : `${leftWidth}px` }}
           >
             <SourcesPanel
@@ -279,7 +274,7 @@ export default function App() {
           )}
 
           {/* Center: Chat panel */}
-          <div className="flex min-w-0 flex-1">
+          <div className="flex min-w-0 flex-1 h-full">
             <ChatPanel
               composer={composer}
               health={health}
@@ -306,7 +301,7 @@ export default function App() {
 
           {/* Desktop: Right panel */}
           <div
-            className="hidden shrink-0 lg:flex"
+            className="hidden shrink-0 lg:flex lg:h-full"
             style={{ width: rightCollapsed ? undefined : `${rightWidth}px` }}
           >
             <StudioPanel
@@ -321,15 +316,11 @@ export default function App() {
           </div>
         </div>
 
-        <footer className="mt-4 flex flex-wrap items-center gap-3 text-sm text-[color:var(--muted)]">
-          <span className="status-chip">
-            <Database className="h-4 w-4" />
-            {summary?.raw_data_path ?? "Sin fuentes"}
-          </span>
-          <span className="status-chip">
-            <PanelsTopLeft className="h-4 w-4" />
-            {health?.ollama_connected ? "Ollama online" : "Ollama offline"}
-          </span>
+        <footer className="shrink-0 flex items-center text-[10px] font-bold tracking-widest uppercase opacity-75">
+          <div className={`flex items-center gap-1.5 ${health?.ollama_connected ? "text-[color:var(--ready)]" : "text-[color:var(--accent)]"}`}>
+            <div className={`h-1.5 w-1.5 rounded-full ${health?.ollama_connected ? "bg-[color:var(--ready)]" : "bg-[color:var(--accent)]"}`} />
+            {health?.ollama_connected ? "Ollama Online" : "Ollama Offline"}
+          </div>
         </footer>
       </div>
     </div>

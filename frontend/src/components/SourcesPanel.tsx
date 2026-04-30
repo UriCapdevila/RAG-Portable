@@ -101,10 +101,9 @@ export default function SourcesPanel({
   }
 
   return (
-    <aside className="panel-surface flex h-full flex-col overflow-hidden p-5">
+    <aside className="panel-surface flex h-full w-full flex-col overflow-hidden p-5">
       <PanelHeader
         title="Fuentes"
-        subtitle={`${indexedSources}/${sources.length} activas en el RAG`}
         side="left"
         onToggle={onToggle}
         rightSlot={
@@ -114,7 +113,7 @@ export default function SourcesPanel({
         }
       />
 
-      <div className="mt-5 flex flex-col gap-3">
+      <div className="mt-5 flex shrink-0 flex-col gap-3">
         <button
           className="ghost-button w-full justify-center"
           type="button"
@@ -148,37 +147,31 @@ export default function SourcesPanel({
           />
         </div>
 
-        <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
-          <span>Fuentes vivas</span>
-          <button className="text-[color:var(--accent)]" type="button" onClick={onReindex}>
-            Reindexar
-          </button>
-        </div>
+
       </div>
 
-      <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
+      <div className="mt-4 flex flex-col space-y-3 flex-1 min-h-0 overflow-y-auto pr-2 pb-2">
         {sources.length ? (
           sources.map((source) => (
             <article className="source-row group" key={source.source_path}>
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--surface-strong)]">
                 <FileText className="h-5 w-5 text-[color:var(--accent)]" />
               </div>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 overflow-hidden">
                 <p className="truncate text-sm font-semibold text-[color:var(--text)]">
                   {source.file_name}
                 </p>
-                <p className="mt-1 text-xs text-[color:var(--muted)]">
+                <p className="mt-0.5 truncate text-xs text-[color:var(--muted)]">
                   {formatFileSize(source.file_size)} · {source.chunk_count} chunks
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1">
                 {source.is_indexed ? (
-                  <span className="status-badge status-badge-ready">
+                  <span className="status-badge status-badge-ready" title="Activa">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Activa
                   </span>
                 ) : (
-                  <span className="status-badge status-badge-warning">Pendiente</span>
+                  <span className="status-badge status-badge-warning" title="Pendiente">●</span>
                 )}
                 <button
                   className="delete-source-button"

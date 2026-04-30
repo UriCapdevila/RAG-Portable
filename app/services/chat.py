@@ -9,7 +9,7 @@ from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.lancedb import LanceDBVectorStore
 
 from app.core.config import AppSettings
-from app.core.prompts import RAG_SYSTEM_PROMPT
+from app.core.prompts import RAG_SYSTEM_PROMPT, QUERY_REWRITE_PROMPT
 from app.services.models import ChatResult, RetrievedChunk
 from app.services.ollama_client import OllamaChatClient
 
@@ -30,10 +30,14 @@ class ChatService:
         if not self.vector_store_ready():
             raise RuntimeError("The vector store is empty. Run ingestion first.")
 
+        # Pilar 4: Normalización de la Consulta (Query Processing)
+        optimized_query = await self._rewrite_query(cleaned_question)
+
+        # Recuperamos el doble de chunks requeridos para tener margen en el Re-ranking
         retriever = self._build_index().as_retriever(
-            similarity_top_k=self._settings.similarity_top_k
+            similarity_top_k=self._settings.similarity_top_k * 2
         )
-        retrieved_nodes = await asyncio.to_thread(retriever.retrieve, cleaned_question)
+        retrieved_nodes = await asyncio.to_thread(retriever.retrieve, optimized_query)
 
         chunks = [
             RetrievedChunk(
@@ -52,7 +56,10 @@ class ChatService:
                 retrieved_chunks=[],
             )
 
-        user_prompt = self._build_user_prompt(cleaned_question, chunks)
+        # Pilar 5: Post-procesamiento y Re-ranking
+        ranked_chunks = self._rerank_chunks(cleaned_question, chunks)[:self._settings.similarity_top_k]
+
+        user_prompt = self._build_user_prompt(cleaned_question, ranked_chunks)
         answer = await asyncio.to_thread(
             self._ollama.generate,
             RAG_SYSTEM_PROMPT,
@@ -62,8 +69,8 @@ class ChatService:
         return ChatResult(
             answer=answer,
             model=self._ollama.model,
-            sources=self._collect_sources(chunks),
-            retrieved_chunks=chunks,
+            sources=self._collect_sources(ranked_chunks),
+            retrieved_chunks=ranked_chunks,
         )
 
     def health_check(self) -> dict[str, Any]:
@@ -133,4 +140,27 @@ class ChatService:
             )
 
         return sources
+
+    async def _rewrite_query(self, original_query: str) -> str:
+        """
+        Utiliza el LLM para reformular la consulta, expandir sinónimos y mejorar la búsqueda vectorial.
+        """
+        try:
+            prompt = QUERY_REWRITE_PROMPT.format(question=original_query)
+            rewritten = await asyncio.to_thread(
+                self._ollama.generate,
+                "Eres un optimizador de búsquedas semánticas.",
+                prompt
+            )
+            # Limpiamos posibles comillas que añada el LLM
+            return rewritten.strip(' "\'\n')
+        except Exception:
+            return original_query
+
+    def _rerank_chunks(self, query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+        """
+        Hook arquitectónico para implementar modelos de Re-ranking (Cross-Encoders).
+        Por defecto, preserva y asegura el orden por score de similitud (Top-K).
+        """
+        return sorted(chunks, key=lambda x: x.score or 0.0, reverse=True)
 
