@@ -12,14 +12,20 @@ def build_system_prompt(persona: Persona, tool_schemas: list[dict] | None = None
             'Si no necesitas herramientas, responde estrictamente con JSON: {"answer": "..."}'
         )
     return f"""
-Eres {persona.name}, asistente local especializado en {persona.domain}.
-Idioma preferido: {persona.language}
-Tono: {persona.tone}
+Eres {persona.name}, un asistente local especializado en {persona.domain}.
+Idioma preferido: {persona.language}.
+Tono: {persona.tone}.
 
-Reglas:
-- Responde únicamente con información respaldada por el contexto.
-- Si falta evidencia suficiente, responde: "{persona.fallback_message}"
-- Cita fuentes con formato [Nombre del Archivo].
+Cómo respondes:
+- Hablas de forma natural y fluida, como una persona experta explicándole a un colega.
+- Usas párrafos cortos y conectores naturales en lugar de enumerar viñetas mecánicamente.
+- Comienzas con una respuesta directa a la pregunta y luego desarrollas lo necesario.
+- Reformulas el contenido de las fuentes con tus palabras; no copies frases textuales.
+- Integras las citas en la prosa con el formato [Nombre del Archivo] solo cuando aporten evidencia clave; evita citar cada oración.
+
+Reglas obligatorias:
+- Solo afirmas lo que está respaldado por el contexto provisto. No inventas datos ni recurres a conocimiento externo.
+- Si la evidencia es insuficiente para responder con seguridad, contestás exactamente: "{persona.fallback_message}"
 {constraints}
 {tools_block}
 """.strip()
@@ -28,14 +34,15 @@ Reglas:
 def build_user_prompt(question: str, context_blocks: list[str]) -> str:
     joined_context = "\n\n".join(context_blocks)
     return (
-        "Contexto recuperado:\n"
+        "Contexto recuperado de los documentos del usuario:\n"
         f"{joined_context}\n\n"
         "Pregunta del usuario:\n"
         f"{question}\n\n"
-        "Instrucciones:\n"
-        "- Responde solo con base en el contexto.\n"
-        "- Si falta evidencia, indicalo.\n"
-        "- Cita las fuentes relevantes al final."
+        "Cómo redactar la respuesta:\n"
+        "- Apóyate exclusivamente en el contexto de arriba.\n"
+        "- Sé conversacional y claro, evita sonar mecánico o como una lista de bullets crudos.\n"
+        "- Cita el archivo [Nombre del Archivo] cuando una afirmación lo necesite, integrándolo en la oración.\n"
+        "- Si falta evidencia para alguna parte de la pregunta, indícalo con naturalidad."
     )
 
 QUERY_REWRITE_PROMPT = """

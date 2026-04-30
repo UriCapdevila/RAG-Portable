@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Bot, CheckCircle2, LoaderCircle, MessageSquareQuote, SendHorizonal, TriangleAlert } from "lucide-react";
+import { Bot, LoaderCircle, MessageSquareQuote, SendHorizonal } from "lucide-react";
 
 import type { ChatMessage, DashboardSummary, HealthResponse } from "../types";
 
@@ -79,21 +79,6 @@ export default function ChatPanel({
               <span>{message.role === "assistant" ? "Asistente" : "Tu pregunta"}</span>
               <span className="text-[color:var(--muted)]">{message.timestampLabel}</span>
             </div>
-            {message.role === "assistant" && (message.grounded !== undefined || message.retrievalStrategy) ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {message.grounded !== undefined ? (
-                  <span className={`status-badge ${message.grounded ? "status-badge-ready" : "status-badge-warning"}`}>
-                    {message.grounded ? <CheckCircle2 className="h-3.5 w-3.5" /> : <TriangleAlert className="h-3.5 w-3.5" />}
-                    {message.grounded ? "Grounded" : "Baja evidencia"}
-                  </span>
-                ) : null}
-                {message.retrievalStrategy ? (
-                  <span className="status-badge status-badge-neutral">
-                    Retrieval: {message.retrievalStrategy}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
             <p className="mt-3 whitespace-pre-wrap text-[15px] leading-7 text-[color:var(--text)]">
               {message.content}
             </p>

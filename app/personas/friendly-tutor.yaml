@@ -14,7 +14,7 @@ parameters:
   use_query_rewrite: true
   use_hybrid_retrieval: true
   grounding_threshold: 0.1
-  tool_mode: off
+  tool_mode: "off"
   allowed_tools: []
 few_shot: []
 fallback_message: "No tengo suficiente información en los documentos proporcionados para responder a esto."

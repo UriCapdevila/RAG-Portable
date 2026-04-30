@@ -7,14 +7,14 @@ constraints:
   - "Responde con viñetas cuando ayude a la claridad."
   - "Cita siempre [Nombre del Archivo]."
 parameters:
-  temperature: 0.1
+  temperature: 0.3
   top_p: 0.9
   similarity_top_k: 6
   rerank_top_k: 4
   use_query_rewrite: true
   use_hybrid_retrieval: true
   grounding_threshold: 0.2
-  tool_mode: auto
+  tool_mode: "auto"
   allowed_tools:
     - list_sources
     - get_document

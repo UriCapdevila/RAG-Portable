@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import yaml
 
 from app.core.config import AppSettings
@@ -20,6 +20,13 @@ class PersonaParameters(BaseModel):
     grounding_threshold: float = 0.15
     tool_mode: str = "off"
     allowed_tools: list[str] = Field(default_factory=list)
+
+    @field_validator("tool_mode", mode="before")
+    @classmethod
+    def normalize_tool_mode(cls, value):
+        if isinstance(value, bool):
+            return "auto" if value else "off"
+        return str(value)
 
 
 class Persona(BaseModel):
