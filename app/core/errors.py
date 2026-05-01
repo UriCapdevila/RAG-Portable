@@ -23,3 +23,11 @@ class IngestionError(AppError):
 
 class RetrievalError(AppError):
     code = "retrieval_error"
+
+
+class TTSError(AppError):
+    code = "tts_error"
+
+
+class TTSDisabledError(TTSError):
+    code = "tts_disabled"

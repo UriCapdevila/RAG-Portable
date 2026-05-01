@@ -32,10 +32,24 @@ class RetrievedChunk:
 class ChatResult:
     answer: str
     model: str
+    conversation_id: str
     sources: list[dict[str, Any]]
     retrieved_chunks: list[RetrievedChunk]
     grounded: bool = True
     retrieval_strategy: str = "vector"
+
+
+@dataclass(slots=True)
+class ConversationMessage:
+    role: str
+    content: str
+    created_at: str | None = None
+
+
+@dataclass(slots=True)
+class ConversationContext:
+    conversation_id: str
+    messages: list[ConversationMessage] = field(default_factory=list)
 
 
 @dataclass(slots=True)

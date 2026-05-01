@@ -13,3 +13,5 @@ data/vector_db/*
 !data/vector_db/.gitkeep
 data/sql_db/*
 !data/sql_db/.gitkeep
+data/tts_models/*
+!data/tts_models/.gitkeep

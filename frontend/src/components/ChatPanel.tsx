@@ -1,6 +1,14 @@
 import { useEffect, useRef } from "react";
-import { Bot, LoaderCircle, MessageSquareQuote, SendHorizonal } from "lucide-react";
+import {
+  Bot,
+  LoaderCircle,
+  MessageSquareQuote,
+  SendHorizonal,
+  Square,
+  Volume2,
+} from "lucide-react";
 
+import { useTextToSpeech } from "../lib/useTextToSpeech";
 import type { ChatMessage, DashboardSummary, HealthResponse } from "../types";
 
 type ChatPanelProps = {
@@ -30,6 +38,15 @@ export default function ChatPanel({
   summary,
 }: ChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const tts = useTextToSpeech();
+
+  useEffect(() => {
+    if (!tts.errorMessage) {
+      return;
+    }
+    const timeout = window.setTimeout(() => tts.clearError(), 4200);
+    return () => window.clearTimeout(timeout);
+  }, [tts]);
 
   const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     onComposerChange(event.target.value);
@@ -66,33 +83,75 @@ export default function ChatPanel({
       </div>
 
       <div className="mt-5 flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto pr-2 pb-2">
-        {messages.map((message) => (
-          <article
-            key={message.id}
-            className={
-              message.role === "assistant"
-                ? "message-card message-assistant"
-                : "message-card message-user self-end"
-            }
-          >
-            <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.18em]">
-              <span>{message.role === "assistant" ? "Asistente" : "Tu pregunta"}</span>
-              <span className="text-[color:var(--muted)]">{message.timestampLabel}</span>
-            </div>
-            <p className="mt-3 whitespace-pre-wrap text-[15px] leading-7 text-[color:var(--text)]">
-              {message.content}
-            </p>
-            {message.sources?.length ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {message.sources.map((source) => (
-                  <span className="source-pill" key={`${message.id}-${source.source_path}`}>
-                    {source.file_name}
-                  </span>
-                ))}
+        {messages.map((message) => {
+          const isAssistant = message.role === "assistant";
+          const playbackState = tts.stateFor(message.id);
+          const isLoading = playbackState === "loading";
+          const isSpeaking = playbackState === "speaking";
+          const isActive = isLoading || isSpeaking;
+          const showTtsButton = isAssistant && tts.enabled && message.content.trim().length > 0;
+          const ttsLabel = isSpeaking
+            ? "Detener lectura"
+            : isLoading
+              ? "Sintetizando audio"
+              : "Leer mensaje en voz alta";
+
+          return (
+            <article
+              key={message.id}
+              className={
+                isAssistant
+                  ? "message-card message-assistant"
+                  : "message-card message-user self-end"
+              }
+            >
+              <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.18em]">
+                <span>{isAssistant ? "Asistente" : "Tu pregunta"}</span>
+                <div className="flex items-center gap-2">
+                  {showTtsButton ? (
+                    <button
+                      className="tts-button"
+                      type="button"
+                      aria-pressed={isActive}
+                      aria-busy={isLoading}
+                      aria-label={ttsLabel}
+                      title={ttsLabel}
+                      disabled={isLoading}
+                      onClick={() => tts.speak(message.id, message.content)}
+                    >
+                      {isLoading ? (
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                      ) : isSpeaking ? (
+                        <Square className="h-3.5 w-3.5" />
+                      ) : (
+                        <Volume2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  ) : null}
+                  <span className="text-[color:var(--muted)]">{message.timestampLabel}</span>
+                </div>
               </div>
-            ) : null}
-          </article>
-        ))}
+              <p className="mt-3 whitespace-pre-wrap text-[15px] leading-7 text-[color:var(--text)]">
+                {message.content}
+              </p>
+              {message.sources?.length ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {message.sources.map((source) => (
+                    <span className="source-pill" key={`${message.id}-${source.source_path}`}>
+                      {source.file_name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+
+        {tts.errorMessage ? (
+          <div className="banner-shell self-center text-sm" role="alert">
+            {tts.errorMessage}
+          </div>
+        ) : null}
 
         {isSending ? (
           <div className="message-card message-assistant">

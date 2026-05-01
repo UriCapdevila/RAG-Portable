@@ -32,6 +32,7 @@ function initialAssistantMessage(): ChatMessage {
 export default function App() {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([initialAssistantMessage()]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [composer, setComposer] = useState("");
   const [banner, setBanner] = useState<string | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -154,7 +155,10 @@ export default function App() {
     setIsSending(true);
 
     try {
-      const response = await sendChat(question);
+      const response = await sendChat(question, conversationId);
+      if (response.conversation_id !== conversationId) {
+        setConversationId(response.conversation_id);
+      }
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",

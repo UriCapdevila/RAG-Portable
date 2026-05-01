@@ -10,6 +10,7 @@ pydantic-settings
 structlog
 pyyaml
 sentence-transformers
+kokoro-onnx
 pytest
 ruff
 mypy

@@ -45,6 +45,29 @@ def build_user_prompt(question: str, context_blocks: list[str]) -> str:
         "- Si falta evidencia para alguna parte de la pregunta, indícalo con naturalidad."
     )
 
+
+def build_disambiguation_prompt(question: str, history_messages: list[dict[str, str]]) -> tuple[str, str]:
+    history_block = "\n".join(
+        f"{item['role']}: {item['content']}"
+        for item in history_messages
+    ) or "Sin historial relevante."
+    system_prompt = (
+        "Eres un asistente que reformula consultas ambiguas sin agregar hechos nuevos. "
+        "Tu tarea es solo resolver referencias conversacionales (por ejemplo: 'eso', 'lo anterior', "
+        "'ese costo', 'el plan que dijiste'). "
+        "No uses conocimiento externo ni inventes información. "
+        "Si la consulta ya es clara o no hay contexto suficiente, devuelve exactamente la consulta original."
+    )
+    user_prompt = (
+        "Historial reciente de la conversación:\n"
+        f"{history_block}\n\n"
+        "Consulta actual del usuario:\n"
+        f"{question}\n\n"
+        "Devuelve solo la consulta final, en una sola línea."
+    )
+    return system_prompt, user_prompt
+
+
 QUERY_REWRITE_PROMPT = """
 Eres un experto en optimización de motores de búsqueda semántica.
 Tu tarea es reescribir la consulta del usuario para maximizar las posibilidades de encontrar información relevante en una base de datos vectorial.
@@ -58,4 +81,3 @@ Reglas:
 Consulta original: {question}
 Consulta optimizada:
 """.strip()
-

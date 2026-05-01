@@ -6,9 +6,13 @@ from app.adapters.embeddings.ollama import OllamaEmbeddingAdapter
 from app.adapters.llm.ollama import OllamaLLMAdapter
 from app.adapters.reranker.cross_encoder import CrossEncoderRerankerAdapter
 from app.adapters.reranker.passthrough import PassthroughRerankerAdapter
+from app.adapters.tts.kokoro import KokoroTTSAdapter
+from app.adapters.tts.null import NullTTSAdapter
 from app.adapters.vector_store.lancedb import LanceDBKeywordIndexAdapter, LanceDBVectorStoreAdapter
 from app.core.config import AppSettings, settings
+from app.ports.tts import TTSPort
 from app.services.chat import ChatService
+from app.services.conversation_history import ConversationHistoryService
 from app.services.ingestion import IngestionService
 from app.services.personas import PersonaService
 from app.services.tools.builtin import GetDocumentTool, ListSourcesTool
@@ -63,6 +67,11 @@ def get_trace_service() -> TraceService:
 
 
 @lru_cache(maxsize=1)
+def get_conversation_history_service() -> ConversationHistoryService:
+    return ConversationHistoryService(get_settings())
+
+
+@lru_cache(maxsize=1)
 def get_workspace_service() -> WorkspaceService:
     return WorkspaceService(get_settings(), get_vector_store())
 
@@ -89,9 +98,25 @@ def get_chat_service() -> ChatService:
         personas=get_persona_service(),
         tools=get_tool_registry(),
         traces=get_trace_service(),
+        history=get_conversation_history_service(),
     )
 
 
 @lru_cache(maxsize=1)
 def get_ingestion_service() -> IngestionService:
     return IngestionService(get_settings(), get_vector_store())
+
+
+@lru_cache(maxsize=1)
+def get_tts() -> TTSPort:
+    cfg = get_settings()
+    if not cfg.tts_enabled:
+        return NullTTSAdapter()
+    return KokoroTTSAdapter(
+        models_dir=cfg.tts_models_dir,
+        default_voice=cfg.tts_voice,
+        default_lang=cfg.tts_lang,
+        default_speed=cfg.tts_speed,
+        quantization=cfg.tts_model_quantization,
+        release_tag=cfg.tts_model_release,
+    )

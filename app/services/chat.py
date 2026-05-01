@@ -8,12 +8,13 @@ from typing import Any
 import structlog
 
 from app.core.config import AppSettings
-from app.core.prompts import build_system_prompt, build_user_prompt
+from app.core.prompts import build_disambiguation_prompt, build_system_prompt, build_user_prompt
 from app.ports.embeddings import EmbeddingProviderPort
 from app.ports.keyword_index import KeywordIndexPort
 from app.ports.llm import LLMProviderPort
 from app.ports.reranker import RerankerPort
 from app.ports.vector_store import VectorStorePort
+from app.services.conversation_history import ConversationHistoryService
 from app.services.fusion import reciprocal_rank_fusion
 from app.services.grounding_validator import is_grounded
 from app.services.intent_detector import is_small_talk
@@ -39,6 +40,7 @@ class ChatService:
         personas: PersonaService,
         tools: ToolRegistry,
         traces: TraceService,
+        history: ConversationHistoryService,
     ) -> None:
         self._settings = settings
         self._llm = llm
@@ -50,13 +52,16 @@ class ChatService:
         self._query = QueryProcessor(llm)
         self._dispatcher = ToolDispatcher(llm, tools, max_steps=settings.max_react_steps)
         self._traces = traces
+        self._history = history
 
-    async def answer(self, question: str) -> ChatResult:
+    async def answer(self, question: str, conversation_id: str | None = None) -> ChatResult:
         request_id = str(uuid.uuid4())
         persona = self._personas.get_active()
         cleaned_question = question.strip()
         if not cleaned_question:
             raise ValueError("Question cannot be empty.")
+        active_conversation_id = self._history.ensure(conversation_id, persona.slug)
+        self._history.append_message(active_conversation_id, "user", cleaned_question)
 
         total_start = time.perf_counter()
         log = logger.bind(request_id=request_id, persona=persona.slug, question=cleaned_question)
@@ -64,16 +69,54 @@ class ChatService:
 
         if is_small_talk(cleaned_question):
             log.info("chat.smalltalk.detected")
-            return await self._answer_small_talk(request_id, persona, cleaned_question, log, total_start)
+            return await self._answer_small_talk(
+                request_id,
+                persona,
+                cleaned_question,
+                log,
+                total_start,
+                active_conversation_id,
+            )
 
         if not self.vector_store_ready():
             raise RuntimeError("The vector store is empty. Run ingestion first.")
 
+        with self._traces.stage(request_id, persona.slug, "disambiguate_query"):
+            disambiguated_question = cleaned_question
+            if self._settings.chat_history_enabled:
+                history_messages = self._history.latest_messages(
+                    active_conversation_id,
+                    self._settings.chat_history_turns_for_disambig,
+                )
+                if history_messages:
+                    stage_start = time.perf_counter()
+                    system_prompt, user_prompt = build_disambiguation_prompt(
+                        cleaned_question,
+                        [
+                            {"role": msg.role, "content": msg.content}
+                            for msg in history_messages
+                        ],
+                    )
+                    candidate = await asyncio.to_thread(
+                        self._llm.generate,
+                        system_prompt,
+                        user_prompt,
+                        temperature=0.0,
+                    )
+                    normalized = candidate.strip(' "\'\n')
+                    if normalized:
+                        disambiguated_question = normalized
+                    log.info(
+                        "chat.disambiguate.done",
+                        duration_ms=round((time.perf_counter() - stage_start) * 1000, 2),
+                        disambiguated_question=disambiguated_question,
+                    )
+
         with self._traces.stage(request_id, persona.slug, "query_rewrite"):
-            optimized_query = cleaned_question
+            optimized_query = disambiguated_question
             if persona.parameters.use_query_rewrite:
                 stage_start = time.perf_counter()
-                optimized_query = await asyncio.to_thread(self._query.rewrite, cleaned_question)
+                optimized_query = await asyncio.to_thread(self._query.rewrite, disambiguated_question)
                 log.info(
                     "chat.query_rewrite.done",
                     duration_ms=round((time.perf_counter() - stage_start) * 1000, 2),
@@ -117,11 +160,14 @@ class ChatService:
             return ChatResult(
                 answer=persona.fallback_message,
                 model=self._llm.model,
+                conversation_id=active_conversation_id,
                 sources=[],
                 retrieved_chunks=[],
                 grounded=True,
                 retrieval_strategy=retrieval_strategy,
             )
+            self._history.append_message(active_conversation_id, "assistant", fallback.answer)
+            return fallback
 
         with self._traces.stage(request_id, persona.slug, "rerank"):
             stage_start = time.perf_counter()
@@ -150,11 +196,14 @@ class ChatService:
             return ChatResult(
                 answer=persona.fallback_message,
                 model=self._llm.model,
+                conversation_id=active_conversation_id,
                 sources=sources,
                 retrieved_chunks=ranked_chunks,
                 grounded=True,
                 retrieval_strategy=retrieval_strategy,
             )
+            self._history.append_message(active_conversation_id, "assistant", fallback.answer)
+            return fallback
 
         context_blocks = [
             f"[Fuente {index}] {chunk.metadata.get('source_path', 'desconocido')}\n{chunk.text.strip()}"
@@ -190,14 +239,17 @@ class ChatService:
             grounded=grounded,
         )
 
-        return ChatResult(
+        result = ChatResult(
             answer=answer,
             model=self._llm.model,
+            conversation_id=active_conversation_id,
             sources=sources,
             retrieved_chunks=ranked_chunks,
             grounded=grounded,
             retrieval_strategy=retrieval_strategy,
         )
+        self._history.append_message(active_conversation_id, "assistant", result.answer)
+        return result
 
     async def _answer_small_talk(
         self,
@@ -206,6 +258,7 @@ class ChatService:
         question: str,
         log,
         total_start: float,
+        conversation_id: str,
     ) -> ChatResult:
         system_prompt = (
             f"Eres {persona.name}. Tono: {persona.tone}. Idioma: {persona.language}.\n"
@@ -230,14 +283,17 @@ class ChatService:
             strategy="smalltalk",
             grounded=True,
         )
-        return ChatResult(
+        result = ChatResult(
             answer=answer,
             model=self._llm.model,
+            conversation_id=conversation_id,
             sources=[],
             retrieved_chunks=[],
             grounded=True,
             retrieval_strategy="smalltalk",
         )
+        self._history.append_message(conversation_id, "assistant", result.answer)
+        return result
 
     def health_check(self) -> dict[str, Any]:
         return {

@@ -31,6 +31,16 @@ class AppSettings(BaseSettings):
     trace_retention: int = 2000
     supported_extensions: tuple[str, ...] = (".pdf", ".txt", ".md", ".csv", ".docx", ".html", ".epub")
 
+    tts_enabled: bool = Field(default=True, validation_alias="TTS_ENABLED")
+    tts_voice: str = Field(default="ef_dora", validation_alias="TTS_VOICE")
+    tts_lang: str = Field(default="es", validation_alias="TTS_LANG")
+    tts_speed: float = Field(default=1.0, validation_alias="TTS_SPEED")
+    tts_model_quantization: str = Field(default="int8", validation_alias="TTS_MODEL_QUANTIZATION")
+    tts_model_release: str = "model-files-v1.0"
+    tts_max_text_length: int = Field(default=4000, validation_alias="TTS_MAX_TEXT_LENGTH")
+    chat_history_enabled: bool = Field(default=True, validation_alias="CHAT_HISTORY_ENABLED")
+    chat_history_turns_for_disambig: int = Field(default=4, validation_alias="CHAT_HISTORY_TURNS_FOR_DISAMBIG")
+
     @property
     def data_dir(self) -> Path:
         return self.project_root / "data"
@@ -67,6 +77,10 @@ class AppSettings(BaseSettings):
     def sqlite_db_path(self) -> Path:
         return self.sql_db_dir / "app.db"
 
+    @property
+    def tts_models_dir(self) -> Path:
+        return self.data_dir / "tts_models"
+
     def ensure_directories(self) -> None:
         self.raw_data_dir.mkdir(parents=True, exist_ok=True)
         self.vector_db_dir.mkdir(parents=True, exist_ok=True)
@@ -74,6 +88,7 @@ class AppSettings(BaseSettings):
         self.static_dir.mkdir(parents=True, exist_ok=True)
         self.frontend_dir.mkdir(parents=True, exist_ok=True)
         self.personas_dir.mkdir(parents=True, exist_ok=True)
+        self.tts_models_dir.mkdir(parents=True, exist_ok=True)
 
 
 settings = AppSettings()

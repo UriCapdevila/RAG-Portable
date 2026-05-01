@@ -208,6 +208,50 @@ body {
   cursor: not-allowed;
 }
 
+.tts-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.6;
+  transition:
+    opacity 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.tts-button:hover {
+  opacity: 1;
+  color: var(--accent);
+  background: rgba(186, 74, 27, 0.1);
+}
+
+.tts-button:focus-visible {
+  outline: none;
+  opacity: 1;
+  color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(186, 74, 27, 0.3);
+}
+
+.tts-button[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--accent);
+  background: rgba(186, 74, 27, 0.14);
+}
+
+.tts-button:disabled {
+  cursor: progress;
+  opacity: 0.85;
+  color: var(--accent);
+  background: rgba(186, 74, 27, 0.08);
+}
+
 .empty-panel {
   border-radius: 24px;
   padding: 1.2rem;

@@ -55,6 +55,7 @@ export type ChunkResponse = {
 export type ChatResponse = {
   answer: string;
   model: string;
+  conversation_id: string;
   sources: SourceResponse[];
   retrieved_chunks: ChunkResponse[];
   grounded: boolean;

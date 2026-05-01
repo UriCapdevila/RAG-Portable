@@ -25,6 +25,7 @@ data/
   raw/                # Documentos fuente (PDF, TXT, MD, CSV, DOCX, HTML, EPUB)
   vector_db/          # Persistencia local de LanceDB
   sql_db/app.db       # SQLite: app_settings, ingest_manifest, traces, trace_stages
+  tts_models/         # Cache local de modelos de voz (Kokoro ONNX)
   eval/               # Set de evaluación + corridas
 
 app/
@@ -45,6 +46,7 @@ app/
     vector_store.py
     keyword_index.py
     reranker.py
+    tts.py
     tool.py
 
   adapters/           # Implementaciones concretas
@@ -53,6 +55,8 @@ app/
     vector_store/lancedb.py
     reranker/passthrough.py
     reranker/cross_encoder.py
+    tts/kokoro.py
+    tts/null.py
     loaders/registry.py
 
   personas/           # Personas YAML (slug, tono, parámetros, allowed_tools)
@@ -141,6 +145,26 @@ Todas son opcionales y tienen default razonable. Ver `.env.example`.
 | `RAG_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Modelo de rerank |
 | `RAG_GROUNDING_THRESHOLD` | `0.15` | Umbral por defecto (la persona puede sobreescribir) |
 | `RAG_MAX_REACT_STEPS` | `3` | Iteraciones máximas del ToolDispatcher |
+| `TTS_ENABLED` | `true` | Activa síntesis de voz local (Kokoro ONNX) |
+| `TTS_VOICE` | `ef_dora` | Voz por defecto (español recomendado) |
+| `TTS_LANG` | `es` | Idioma por defecto para síntesis |
+| `TTS_SPEED` | `1.0` | Velocidad de lectura (`0.5` a `2.0`) |
+| `TTS_MODEL_QUANTIZATION` | `int8` | Variante del modelo (`int8`, `fp16`, `fp32`) |
+| `TTS_MAX_TEXT_LENGTH` | `4000` | Límite por request para prevenir cargas excesivas |
+
+## Voz local (TTS)
+
+El proyecto incluye TTS local usando **kokoro-onnx**:
+
+- No requiere instalar apps del sistema para voz: se instala desde `requirements.txt`.
+- La primera vez que usás TTS, se descargan automáticamente los archivos del modelo en `data/tts_models/`.
+- El frontend usa el backend (`/api/tts`) para sintetizar audio WAV y reproducirlo en el navegador.
+
+Notas prácticas:
+
+- Con `TTS_MODEL_QUANTIZATION=int8` la descarga inicial ronda ~115 MB y es la opción recomendada.
+- Si querés desactivar completamente la funcionalidad, seteá `TTS_ENABLED=false`.
+- Cambiá `TTS_VOICE` para probar voces en español: `ef_dora`, `em_alex`, `em_santa`.
 
 ## Endpoints principales
 
@@ -151,6 +175,8 @@ Todas son opcionales y tienen default razonable. Ver `.env.example`.
 - `POST /api/sources/delete`
 - `POST /api/ingestion/run`
 - `POST /api/chat`
+- `GET /api/tts/status`
+- `POST /api/tts`
 - `GET /api/personas`
 - `GET /api/personas/active`
 - `POST /api/personas/active`

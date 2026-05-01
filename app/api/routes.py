@@ -5,17 +5,23 @@ from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.core.container import (
     get_chat_service,
+    get_conversation_history_service,
     get_ingestion_service,
     get_persona_service,
     get_trace_service,
+    get_tts,
     get_workspace_service,
 )
+from app.core.errors import TTSDisabledError, TTSError
+from app.ports.tts import TTSPort
 from app.services.chat import ChatService
+from app.services.conversation_history import ConversationHistoryService
 from app.services.ingestion import IngestionService
 from app.services.models import SourceRecord, UploadReport
 from app.services.personas import Persona, PersonaService
@@ -43,6 +49,7 @@ class IngestionResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, description="User question.")
+    conversation_id: str | None = Field(default=None, description="Conversation identifier.")
 
 
 class HealthResponse(BaseModel):
@@ -67,10 +74,19 @@ class ChunkResponse(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     model: str
+    conversation_id: str
     sources: list[SourceResponse]
     retrieved_chunks: list[ChunkResponse]
     grounded: bool
     retrieval_strategy: str
+
+
+class CreateConversationRequest(BaseModel):
+    persona_slug: str | None = Field(default=None, description="Persona slug to associate with the conversation.")
+
+
+class CreateConversationResponse(BaseModel):
+    conversation_id: str
 
 
 class SourceRecordResponse(BaseModel):
@@ -259,7 +275,7 @@ async def run_ingestion(request: IngestionRequest) -> IngestionResponse:
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)) -> ChatResponse:
     try:
-        result = await chat_service.answer(request.question)
+        result = await chat_service.answer(request.question, request.conversation_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -270,6 +286,7 @@ async def chat(request: ChatRequest, chat_service: ChatService = Depends(get_cha
     return ChatResponse(
         answer=result.answer,
         model=result.model,
+        conversation_id=result.conversation_id,
         sources=[SourceResponse(**source) for source in result.sources],
         grounded=result.grounded,
         retrieval_strategy=result.retrieval_strategy,
@@ -281,6 +298,18 @@ async def chat(request: ChatRequest, chat_service: ChatService = Depends(get_cha
             )
             for chunk in result.retrieved_chunks
         ],
+    )
+
+
+@router.post("/conversations", response_model=CreateConversationResponse)
+async def create_conversation(
+    request: CreateConversationRequest,
+    history_service: ConversationHistoryService = Depends(get_conversation_history_service),
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> CreateConversationResponse:
+    persona_slug = request.persona_slug or persona_service.get_active().slug
+    return CreateConversationResponse(
+        conversation_id=history_service.create(persona_slug),
     )
 
 
@@ -323,3 +352,69 @@ async def traces(limit: int = 50, trace_service: TraceService = Depends(get_trac
 @router.get("/metrics")
 async def metrics(trace_service: TraceService = Depends(get_trace_service)) -> dict[str, Any]:
     return trace_service.metrics()
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(..., min_length=1, description="Texto a sintetizar.")
+    voice: str | None = Field(default=None, description="Override de voz (ej. 'ef_dora').")
+    lang: str | None = Field(default=None, description="Override de idioma (ej. 'es').")
+    speed: float | None = Field(default=None, ge=0.5, le=2.0, description="Velocidad de habla.")
+
+
+class TTSStatusResponse(BaseModel):
+    enabled: bool
+    voice: str
+    lang: str
+    speed: float
+
+
+@router.get("/tts/status", response_model=TTSStatusResponse)
+async def tts_status(tts: TTSPort = Depends(get_tts)) -> TTSStatusResponse:
+    return TTSStatusResponse(
+        enabled=tts.enabled,
+        voice=settings.tts_voice,
+        lang=settings.tts_lang,
+        speed=settings.tts_speed,
+    )
+
+
+@router.post("/tts")
+async def synthesize_speech(
+    request: TTSRequest,
+    tts: TTSPort = Depends(get_tts),
+) -> Response:
+    if not tts.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="El servicio de TTS esta deshabilitado.",
+        )
+
+    if len(request.text) > settings.tts_max_text_length:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Texto demasiado largo (>{settings.tts_max_text_length} caracteres).",
+        )
+
+    try:
+        result = await asyncio.to_thread(
+            tts.synthesize,
+            request.text,
+            voice=request.voice,
+            lang=request.lang,
+            speed=request.speed,
+        )
+    except TTSDisabledError as exc:
+        raise HTTPException(status_code=503, detail=exc.message) from exc
+    except TTSError as exc:
+        raise HTTPException(status_code=500, detail=exc.message) from exc
+
+    return Response(
+        content=result.audio,
+        media_type=result.mime_type,
+        headers={
+            "Cache-Control": "no-store",
+            "X-TTS-Voice": result.voice,
+            "X-TTS-Lang": result.lang,
+            "X-TTS-Sample-Rate": str(result.sample_rate),
+        },
+    )
